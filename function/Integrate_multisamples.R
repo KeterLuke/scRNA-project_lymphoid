@@ -1,10 +1,4 @@
-#' @author longzhilin
-#' @decscription using harmony method to integrate mulitiple sample and adjust patient bias
-#' @param seurat.object: the merged seurat object after quality control (NormalizeData, FindVariableFeatures, ScaleData)
-#' @param set.resolutions: the resolutions for FindClusters function
-#' @param assay: RNA or SCT
-#' @param PC: PCA numbers to reduce dimension and cluster
-#' @param npcs: RunPCA parameters and ElbowPlot show the all PCs
+
 
 ####SCT or RNA
 ####Harmony correction batch

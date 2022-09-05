@@ -1,8 +1,4 @@
 ####Using DoubletFinder function for Doublet detection
-# The input Seurat object, the request has been filtered, PCA, FindClusters, etc.
-
-#' @param annotation seurat result
-#' @param GT GT is a vector containing "Singlet" and "Doublet" calls recorded using sample multiplexing classification and/or in silico geneotyping results 
 
 doubletDetect <- function(Seurat.object, PCs, doublet.rate = 0.076, annotation = "seurat_clusters", pN_value = 0.25, GT = FALSE, sct = FALSE){
   

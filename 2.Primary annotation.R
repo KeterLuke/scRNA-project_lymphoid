@@ -1,4 +1,4 @@
-#' @description: annotated the major cell type
+#' @description: annotate the major cell type
 
 ####load packages####
 library(Seurat)

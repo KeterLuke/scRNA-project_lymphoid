@@ -1,4 +1,4 @@
-#' @description: proProcess, cluster and remove the batch effect
+#' @description: quality control,remove doublets,remove batch effect and integrate samples
 # this work_lympho 6 samples
 #### load package (always load all the package before you run the code)####
 library(Seurat)

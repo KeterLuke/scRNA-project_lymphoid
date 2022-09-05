@@ -1,9 +1,3 @@
-#' @description get variable genes and evalute the cell cycle effect
-#' @param seurat.lists: multi seurat object list
-#' @parma method: seurat process method
-#' @param: return.only.var.gene, vars.to.regress: parameter for SCTranform
-#' @param: nfeatures: the number of variable features
-
 variableFeatureSelection <- function(seurat.lists, method = c("Standard", "SCT"), return.only.var.genes = T, nfeatures = 3000, vars.to.regress = c("nCount_RNA", "percent.mt")){
   
   for (i in 1:length(seurat.lists)) {

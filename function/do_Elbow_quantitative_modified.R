@@ -1,3 +1,4 @@
+
 do_Elbow_quantitative<-function(seurat_integrated,harmony=T){
   #seurat_integrated<-tiss_subset_real_tumor 
   # Determine percent of variation associated with each PC

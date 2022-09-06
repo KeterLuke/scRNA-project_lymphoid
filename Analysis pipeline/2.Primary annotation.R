@@ -1,4 +1,4 @@
-#' @description: annotate the major cell type
+#' @description: annotate the cell type
 
 ####load packages####
 library(Seurat)
@@ -278,7 +278,7 @@ major_celltype <- gsub("^3$", "B", major_celltype)
 major_celltype <- gsub("^4$", "T", major_celltype)
 major_celltype <- gsub("^5$", "T", major_celltype)
 major_celltype <- gsub("^6$", "T", major_celltype)
-major_celltype <- gsub("^7$", "Plasma", major_celltype) 
+major_celltype <- gsub("^7$", "B", major_celltype) 
 major_celltype <- gsub("^8$", "Myeloid", major_celltype)
 major_celltype <- gsub("^9$", "Myeloid", major_celltype)
 major_celltype <- gsub("^10$", "B", major_celltype)
@@ -298,9 +298,14 @@ saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
 ####observe the annotated results####
 data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
+data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid'),'Immune',
+                                                ifelse(data.merge@meta.data$major_celltype%in%c('Endo','Fibro','Smooth'),'Stromal',""))
+table(data.merge$large_annotation)
 source('./function/colorPalettes.R')
 pdf("2.Cluster/Annotate/res_0.4/cellType.pro.pdf")
 length(unique(data.merge$major_celltype))
+DimPlot(object = data.merge, reduction = 'tsne',label = FALSE, group.by = "large_annotation")
+DimPlot(object = data.merge, reduction = 'umap',label = FALSE, group.by = "large_annotation")
 DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "major_celltype",cols = Palettes[['mycols_8']])+NoLegend()
 DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "major_celltype",cols = Palettes[['mycols_8']])
 DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "major_celltype",cols = Palettes[['mycols_8']])+NoLegend()
@@ -330,12 +335,10 @@ gene_list <- list(B = cell.type.markers_distinct$Gene[cell.type.markers_distinct
                   Fibro = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Fibro'],
                   Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
                   NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
-                  Plasma = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Plasma'],
                   Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth'],
-                  T= cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
-                  Epi = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Epi']
+                  T= cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T']
                   )
-DotPlot_ByColumnList(object = data.merge,features = gene_list,group.by = "major_celltype",dot.scale = 3)
+DotPlot_ByColumnList(object = data.merge,features = gene_list,group.by = "major_celltype",dot.scale = 5,scale.by = 'size',col.min = 0,scale.min = 0)
 dev.off()
 
 group <- ifelse(grepl(pattern = 'T',data.merge@meta.data$sample),'tumor','normal')
@@ -427,7 +430,7 @@ saveFormat <- lapply(idents, function(x){
 })
 write.xlsx(saveFormat, file = "2.Cluster/Annotate/res_0.4/cellType.sig.pos.DEGs.xlsx", sheetName = idents, rowNames = F)
 saveRDS(cellType.sig.DEGs, file = "2.Cluster/Annotate/res_0.4/cellType.sig.pos.DEGs.rds")
-top.genes <- cellType.sig.DEGs %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+top.genes <- cellType.sig.DEGs %>% group_by(cluster) %>% top_n(n = 7, wt = avg_log2FC)
 top.genes <- top.genes[order(top.genes$cluster),]
 data.merge <- ScaleData(data.merge,features = c(VariableFeatures(data.merge),unique(top.genes$gene)))
 pdf("2.Cluster/Annotate/res_0.4/cellType.topgenes.pdf",width = 15)

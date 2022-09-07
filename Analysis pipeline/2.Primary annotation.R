@@ -293,14 +293,47 @@ major_celltype <- gsub("^18$", "Smooth", major_celltype)
 table(major_celltype)
 data.merge <- AddMetaData(data.merge, major_celltype, col.name = "major_celltype")
 table(data.merge$major_celltype)
+data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid'),'Immune',
+                                                ifelse(data.merge@meta.data$major_celltype%in%c('Endo','Fibro','Smooth'),'Stromal',""))
+table(data.merge$large_annotation)
+saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
+####verify the annotated results by Celltypist####
+data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
+library(reticulate)
+py_config()
+scanpy <- import('scanpy')
+pandas <- import('pandas')
+numpy <- import('numpy')
+celltypist <- import('celltypist')
+adata = scanpy$AnnData(X = numpy$array(as.matrix(t(as.matrix(data.merge[['RNA']]@counts)))),
+                       obs = pandas$DataFrame(data.merge@meta.data),
+                       var = pandas$DataFrame(data.frame(gene = rownames(data.merge[['RNA']]@counts),
+                                                         row.names = rownames(data.merge[['RNA']]@counts)))
+)
+adata
+scanpy$pp$normalize_total(adata, target_sum=1e4)
+scanpy$pp$log1p(adata)
+predictions = celltypist$annotate(adata, model = 'Immune_All_High.pkl', majority_voting = T)
+predicted_major <- as.data.frame(predictions$predicted_labels)
+predicted_major$seurat_cluster <- data.merge@meta.data$seurat_clusters
+data.merge <- AddMetaData(data.merge,predicted_major$majority_voting,col.name = 'celltypist_major')
+table(data.merge$celltypist_major,data.merge$seurat_clusters)
+
+predictions = celltypist$annotate(adata, model = 'Immune_All_Low.pkl', majority_voting = T)
+predicted_minor <- as.data.frame(predictions$predicted_labels)
+predicted_minor$seurat_cluster <- data.merge@meta.data$seurat_clusters
+data.merge <- AddMetaData(data.merge,predicted_minor$majority_voting,col.name = 'celltypist_minor')
+table(data.merge$celltypist_minor,data.merge$seurat_clusters)
+
+write.xlsx(predicted_major,file = './2.Cluster/Annotate/res_0.4/celltypist_predicted.major.xlsx',rowNames = T)
+write.xlsx(predicted_minor,file = './2.Cluster/Annotate/res_0.4/celltypist_predicted.minor.xlsx',rowNames = T)
+
+View(data.merge@meta.data)
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
 ####observe the annotated results####
 data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
-data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid'),'Immune',
-                                                ifelse(data.merge@meta.data$major_celltype%in%c('Endo','Fibro','Smooth'),'Stromal',""))
-table(data.merge$large_annotation)
 source('./function/colorPalettes.R')
 pdf("2.Cluster/Annotate/res_0.4/cellType.pro.pdf")
 length(unique(data.merge$major_celltype))

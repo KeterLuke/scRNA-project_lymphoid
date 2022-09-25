@@ -175,7 +175,13 @@ meanExpCluster <- apply(expMatrix.high, 1, function(x){
   return(mean.value)
 })
 
-corrMatrix <- (1- cor(t(meanExpCluster), method="pearson"))/2
+pdf('2.Cluster/Annotate/res_0.4/cor_cluster.pdf')
+cor <- cor(t(meanExpCluster), method="spearman")
+cor <- (cor - min(cor))/(max(cor)-min(cor))
+pheatmap::pheatmap(cor,angle_col = 45,cluster_cols = T,cluster_rows = T)
+dev.off()
+
+corrMatrix <- (1- cor(t(meanExpCluster), method="spearman"))/2
 library(ape)
 ## dd <- dist(M)
 hc <- hclust(as.dist(corrMatrix),method="complete")
@@ -281,7 +287,7 @@ major_celltype <- gsub("^6$", "T", major_celltype)
 major_celltype <- gsub("^7$", "B", major_celltype) 
 major_celltype <- gsub("^8$", "Myeloid", major_celltype)
 major_celltype <- gsub("^9$", "Myeloid", major_celltype)
-major_celltype <- gsub("^10$", "B", major_celltype)
+major_celltype <- gsub("^10$", "Cycling", major_celltype)
 major_celltype <- gsub("^11$", "NK", major_celltype)
 major_celltype <- gsub("^12$", "T", major_celltype)
 major_celltype <- gsub("^13$", "B", major_celltype)
@@ -293,7 +299,7 @@ major_celltype <- gsub("^18$", "Smooth", major_celltype)
 table(major_celltype)
 data.merge <- AddMetaData(data.merge, major_celltype, col.name = "major_celltype")
 table(data.merge$major_celltype)
-data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid'),'Immune',
+data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid','Cycling'),'Immune',
                                                 ifelse(data.merge@meta.data$major_celltype%in%c('Endo','Fibro','Smooth'),'Stromal',""))
 table(data.merge$large_annotation)
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
@@ -355,23 +361,26 @@ pdf("2.Cluster/Annotate/res_0.4/cellType.sample.ratio.pdf", height = 10, width =
 ratio.plot(seurat.object = data.merge, id.vars1 = "major_celltype", id.vars2 = "orig.ident", angle = 60,color.len = Palettes[['mycols_8']])
 dev.off()
 
-pdf("2.Cluster/Annotate/res_0.4/cellType.marker.dotplot.pdf", height = 10)
+pdf("2.Cluster/Annotate/res_0.4/cellType.marker.dotplot.pdf", height = 10,width = 8)
 cell.type.markers <- read.table(file = "2.Cluster/Annotate/CellMarker_lowres_v2.txt", header = T, stringsAsFactors = F, sep = "\t")
 exp.matrix <- GetAssayData(data.merge, slot = "data")
 index <- match(cell.type.markers$Gene, rownames(exp.matrix))
 gene.matrix <- exp.matrix[na.omit(index),]
 cell.type.markers <- cell.type.markers[which(!is.na(index)),]
-library(GEB)
 cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
 gene_list <- list(B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
+                  T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
+                  Cycing = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Proliferating'],
                   Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo'],
                   Fibro = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Fibro'],
                   Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
                   NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
-                  Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth'],
-                  T= cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T']
+                  Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth']
                   )
-DotPlot_ByColumnList(object = data.merge,features = gene_list,group.by = "major_celltype",dot.scale = 5,scale.by = 'size',col.min = 0,scale.min = 0)
+data.merge@meta.data$major_celltype <- factor(data.merge@meta.data$major_celltype,levels = c(
+  'B','T','Cycling','Endo','Fibro','Myeloid','NK','Smooth'
+),ordered = T)
+DotPlot_ByColumnList(data.merge,group.by = 'major_celltype',cols = c('grey','red'),features = gene_list,scale.by = 'size',col.min = -1)
 dev.off()
 
 group <- ifelse(grepl(pattern = 'T',data.merge@meta.data$sample),'tumor','normal')
@@ -430,6 +439,10 @@ plot_density(data.merge,features = c('CD8A','CD8B','NKG7','GZMK'),reduction = 'u
 plot_density(data.merge,features = c('CD8A','CD8B','NKG7','GZMK'),reduction = 'tsne',joint = F)
 dev.off()
 ####
+pdf('./2.Cluster/Annotate/res_0.4/T_featureplot.pdf',width = 16,height = 16)
+FeaturePlot(data.merge,features = c('CD3D','CD3E','CD3G','CD7'),reduction = 'umap',order = T)
+dev.off()
+####
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
 #### Cell type specific gene####
@@ -471,7 +484,7 @@ DoHeatmap(data.merge, features = unique(top.genes$gene), size = 2) + NoLegend() 
 dev.off()
 source('./function/do_heatmap.R')
 pdf('./2.Cluster/Annotate/res_0.4/cellType.topgenes.mean.pdf')
-DoHeatmap_my(data.merge,features = unique(top.genes$gene),slot = 'scale.data',cluster_cols = F,color = Palettes[['greenBlue']],angle_col = 45,
+DoHeatmap_my(data.merge,features = unique(top.genes$gene),slot = 'scale.data',cluster_cols = F,color = colorRampPalette(Palettes[['blueRed']])(100),angle_col = 45,
              assay = 'RNA',group.by = 'major_celltype',cluster_rows = F)
 
 dev.off()

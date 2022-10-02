@@ -328,6 +328,7 @@ plt$savefig('./3.1Subcluster_T/Annotate/CD8.pdf', bbox_inches = 'tight')
 
 pdf('3.1Subcluster_T/Annotate/CD4_CD8.pdf')
 FeaturePlot(sub.T,reduction = 'umap',features = c('CD4','CD8A','CD8B'),order = T,cols = Palettes[['greyMagma']],min.cutoff = .5)
+FeaturePlot(sub.T,reduction = 'tsne',features = c('CD4','CD8A','CD8B'),order = T,cols = Palettes[['greyMagma']],min.cutoff = .5)
 dev.off()
 ####celltypist predict####
 celltypist <- import('celltypist')

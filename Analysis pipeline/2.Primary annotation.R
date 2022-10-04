@@ -190,7 +190,7 @@ plot.phylo(as.phylo(hc), type = "fan", cex = 0.8,no.margin = FALSE)
 dev.off()
 
 saveRDS(data.merge,file = './2.Cluster/data.merge.rds')
-#### Differential expression##
+#### Differential expression####
 data.merge <- readRDS('./2.Cluster/data.merge.rds')
 Idents(data.merge) <- data.merge$seurat_clusters
 cluster.all.markers <- FindAllMarkers(data.merge, only.pos = TRUE, group.by = "seurat_clusters",
@@ -361,14 +361,14 @@ pdf("2.Cluster/Annotate/res_0.4/cellType.sample.ratio.pdf", height = 10, width =
 ratio.plot(seurat.object = data.merge, id.vars1 = "major_celltype", id.vars2 = "orig.ident", angle = 60,color.len = Palettes[['mycols_8']])
 dev.off()
 
-pdf("2.Cluster/Annotate/res_0.4/cellType.marker.dotplot.pdf", height = 10,width = 8)
 cell.type.markers <- read.table(file = "2.Cluster/Annotate/CellMarker_lowres_v2.txt", header = T, stringsAsFactors = F, sep = "\t")
 exp.matrix <- GetAssayData(data.merge, slot = "data")
 index <- match(cell.type.markers$Gene, rownames(exp.matrix))
 gene.matrix <- exp.matrix[na.omit(index),]
 cell.type.markers <- cell.type.markers[which(!is.na(index)),]
 cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
-gene_list <- list(B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
+gene_list <- list(
+                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
                   T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
                   Cycing = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Proliferating'],
                   Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo'],
@@ -380,7 +380,9 @@ gene_list <- list(B = cell.type.markers_distinct$Gene[cell.type.markers_distinct
 data.merge@meta.data$major_celltype <- factor(data.merge@meta.data$major_celltype,levels = c(
   'B','T','Cycling','Endo','Fibro','Myeloid','NK','Smooth'
 ),ordered = T)
-DotPlot_ByColumnList(data.merge,group.by = 'major_celltype',cols = c('grey','red'),features = gene_list,scale.by = 'size',col.min = -1)
+library(GEB)
+pdf("2.Cluster/Annotate/res_0.4/cellType.marker.dotplot.pdf", height = 10,width = 8)
+DotPlot_ByColumnList(data.merge,group.by = 'major_celltype',cols = c('grey','red'),features = gene_list,scale.by = 'size',col.min = 1.5)
 dev.off()
 
 group <- ifelse(grepl(pattern = 'T',data.merge@meta.data$sample),'tumor','normal')
@@ -441,6 +443,12 @@ dev.off()
 ####
 pdf('./2.Cluster/Annotate/res_0.4/T_featureplot.pdf',width = 16,height = 16)
 FeaturePlot(data.merge,features = c('CD3D','CD3E','CD3G','CD7'),reduction = 'umap',order = T)
+dev.off()
+####
+pdf('2.Cluster/Annotate/res_0.4/imm.pdf',width = 8,height = 8)
+plot_density(data.merge,features = c('PTPRC'),reduction = 'umap',joint = F)
+plot_density(data.merge,features = c('PTPRC'),reduction = 'tsne',joint = F)
+VlnPlot(data.merge,features = 'PTPRC',group.by = 'major_celltype',pt.size = 0)
 dev.off()
 ####
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')

@@ -142,7 +142,7 @@ DefaultAssay(sub.scRNA.harmony) <- "RNA"
 sub.scRNA.harmony <- subset(sub.scRNA.harmony,subset = seurat_clusters %in% c(0:9,11:12,14))
 sub.scRNA.harmony <- NormalizeData(sub.scRNA.harmony, verbose = FALSE)
 sub.scRNA.harmony <- FindVariableFeatures(sub.scRNA.harmony,nfeatures = 3000)
-sub.scRNA.harmony <- ScaleData(sub.scRNA.harmony, verbose = FALSE, vars.to.regress = c("nCount_RNA", "percent.mt"), features = row.names(sub.scRNA.harmony@assay$RNA@data))
+sub.scRNA.harmony <- ScaleData(sub.scRNA.harmony, verbose = FALSE, vars.to.regress = c("nCount_RNA", "percent.mt"), features = VariableFeatures(sub.scRNA.harmony))
 sub.scRNA.harmony <- RunPCA(sub.scRNA.harmony,verbose = F,npcs = 100)
 sub.scRNA.harmony <- RunUMAP(sub.scRNA.harmony,verbose = F,reduction = 'pca',dims = 1:20)
 DimPlot(sub.scRNA.harmony,reduction = 'umap',group.by = 'orig.ident')
@@ -198,7 +198,7 @@ pdf('./3.1Subcluster_T/Annotate/classical.marker.cd8.pdf')
 plot_density(sub.T,features  = c('CD8A','CD8B','CCR7','LEF1'),reduction = 'umap',joint = F)##Naive
 plot_density(sub.T,features  = c('CD8A','CD8B','IFNG','GNLY'),reduction = 'umap',joint = F)##CTL
 dev.off()
-##cluster similarity##
+##cluster similarity#####
 expMatrix <- GetAssayData(sub.T, slot = "scale.data")
 highVariableGenes <- VariableFeatures(sub.T)
 expMatrix.high <- expMatrix[highVariableGenes,]
@@ -222,7 +222,7 @@ pdf("3.1Subcluster_T/Annotate/clustersimilarity.HVG.pdf")
 plot.phylo(as.phylo(hc), type = "fan", cex = 0.8,no.margin = FALSE)
 dev.off()
 
-##expression of functional markers
+##expression of functional markers####
 cell.type.markers <- read.table(file = "3.1Subcluster_T/Annotate/T_functional markers.txt", header = T, stringsAsFactors = F, sep = "\t")
 
 exp.matrix <- GetAssayData(sub.T, slot = "data")
@@ -306,7 +306,7 @@ pdf('./3.1Subcluster_T/Annotate/cluster.top10genes.mean.pdf',height = 12)
 DoHeatmap_my(sub.T,features = unique(top10.genes$gene),slot = 'scale.data',assay = 'RNA',cluster_cols = F,group.by = 'seurat_clusters',
              color = colorRampPalette(Palettes[['blueRed']])(100))
 dev.off()
-####CD4 CED8
+####CD4 CD8
 library(reticulate)
 py_config()
 scanpy <- import('scanpy')
@@ -623,15 +623,15 @@ write.xlsx(saveFormat,file = './3.1Subcluster_T/Annotate/enrichment/GSVA/gsvaRea
 ####add module score####
 sub.T <- readRDS('./3.1Subcluster_T/sub.T.rds')
 Idents(sub.T) <- sub.T$seurat_clusters
-signature <- list(Naive = c('CCR7','LEF1','TCF7','SELL'),
+signature <- list(Naive = c('CCR7','LEF1','CD55'),
                   Cytotoxic = c('IFNG','GNLY','GZMA','GZMB','GZMH','NKG7'),
-                  Memory = c('IL2','IL7R','FOS','S100A4','ANXA1','CD40LG'),
+                  Memory = c('IL2','IL7R','FOS','CD40LG','JUN'),
                   Treg = c('FOXP3','IL2RA','BATF','IKZF2'),
                   Exhausted = c('CTLA4','PDCD1','TIGIT','LAG3','HAVCR2'))
 sce <- AddModuleScore(sub.T,features = signature,name = names(signature))
-pdf('./3.1Subcluster_T/Annotate/Signature_score.pdf')
+pdf('./3.1Subcluster_T/Annotate/Signature_score.pdf',width = 8,height = 12)
 VlnPlot(sce,features = c('Naive1','Cytotoxic2','Memory3','Treg4','Exhausted5'),ncol = 2,pt.size = 0,cols = Palettes[['mycols_12']])
-FeaturePlot(sce,features = c('Naive1','Cytotoxic2','Memory3','Treg4','Exhausted5'),reduction = 'umap',ncol = 2,order = T,min.cutoff = 0.4,cols = Palettes[['greyMagma']])
+FeaturePlot(sce,features = c('Naive1','Cytotoxic2','Memory3','Treg4','Exhausted5'),reduction = 'umap',ncol = 2,order = T,min.cutoff = .3,cols = Palettes[['greyMagma']],pt.size = 0.01)
 dev.off()
 sub.T <- sce
 saveRDS(sub.T,file = './3.1Subcluster_T/sub.T.rds')
@@ -705,10 +705,10 @@ minor_celltype <- gsub("^3$", "CD8Tem_CCL4", minor_celltype)
 minor_celltype <- gsub("^4$", "CD4Tun", minor_celltype)
 minor_celltype <- gsub("^5$", "CD4Treg_RTKN2", minor_celltype)
 minor_celltype <- gsub("^6$", "CD8Tn_CD55", minor_celltype)
-minor_celltype <- gsub("^7$", "CD4Tstd_HSPA1A", minor_celltype)
+minor_celltype <- gsub("^7$", "CD4Tem-std_HSPA1A", minor_celltype)
 minor_celltype <- gsub("^8$", "CD4Treg_IL2RA", minor_celltype)
 minor_celltype <- gsub("^9$", "CD4Tex_PDCD1", minor_celltype)
-minor_celltype <- gsub("^10$", "CD4Tif1_IFI44L", minor_celltype)
+minor_celltype <- gsub("^10$", "CD4Tem-if1_IFI44L", minor_celltype)
 minor_celltype <- gsub("^11$", "CD8Tex_HAVCR2", minor_celltype)
 
 table(minor_celltype)
@@ -741,16 +741,15 @@ saveRDS(sub.T,file = './3.1Subcluster_T/sub.T.pro.rds')
 
 ####expression of celltype markers####
 sub.T <- readRDS('./3.1Subcluster_T/sub.T.pro.rds')
-genelist <- c('CD4','CD8A','CD8B','CCR7','LEF1','TCF7','CD55','NELL2','IL2','CD40LG','IL7R','ANXA1','S100A4','FOS','JUN',
-              'HLA-DRB1','HLA-DPB1','CCL4','CCL5','GZMA','GNLY','GZMK','GZMB','GZMH','NKG7','RTKN2','FOXP3','IKZF2','MAF','IL2RA','BATF',
-              'ICA1','TOX2','PDCD1','CTLA4','TIGIT','LYST','LGALS3','HAVCR2','HSPA1A','HSPA1B','HSPD1','HSPE1','DNAJB1','DNAJB4',
-              'IFI44L','IFI6','IFI44','IFIT1','IFIT3')
-sub.T <- ScaleData(sub.T,features = c(VariableFeatures(sub.T),genelist))
+genelist <- c('CD4','CD8B','CCR7','LEF1','TCF7','CD55','NELL2','IL2','CD40LG','IL7R','ANXA1','S100A4','FOS','JUN','HSPA1A','HSPA1B','HSPD1','HSPE1','DNAJB1','DNAJB4',
+              'IFI44L','IFI6','IFI44','IFIT1','IFIT3',
+              'CCL4','CCL5','IFNG','GZMA','GNLY','GZMK','GZMB','GZMH','NKG7','RTKN2','FOXP3','IKZF2','MAF','IL2RA','BATF',
+              'ICA1','TOX2','PDCD1','CTLA4','TIGIT','LYST','LGALS3','HAVCR2')
 sub.T@meta.data$celltype <- sub.T@meta.data$minor_celltype
-sub.T@meta.data$celltype <- factor(sub.T@meta.data$celltype,levels = c('CD4Tn_CD55','CD8Tn_CD55','CD4Tcm_IL2','CD4Tem_ANXA1',
+sub.T@meta.data$celltype <- factor(sub.T@meta.data$celltype,levels = c('CD4Tn_CD55','CD8Tn_CD55','CD4Tcm_IL2','CD4Tem_ANXA1','CD4Tem-std_HSPA1A','CD4Tem-if1_IFI44L',
                                                                'CD8Tem_CCL4','CD4Treg_RTKN2',
-                                                               'CD4Treg_IL2RA','CD4Tex_PDCD1','CD8Tex_HAVCR2',
-                                                               'CD4Tstd_HSPA1A','CD4Tif1_IFI44L'),ordered = T)
+                                                               'CD4Treg_IL2RA','CD4Tex_PDCD1','CD8Tex_HAVCR2'
+                                                               ),ordered = T)
 Idents(sub.T) <- sub.T$celltype
 exp.matrix <- GetAssayData(sub.T, slot = "data")
 index <- match(genelist, rownames(exp.matrix))
@@ -761,14 +760,14 @@ cluster.exp <- apply(gene.matrix, 1, function(x){
   a <- tapply(x, sub.T$celltype, mean)
   return(a)
 })
-cluster.score.normailzed <- decostand(cluster.exp, "range", 2) ##perform 0-1 standardization for all clusters per gene
+cluster.score.normailzed <- decostand(cluster.exp, "range", 2) ##perform standardization for all clusters per gene
 pdf('./3.1Subcluster_T/Annotate/celltype_expression.pdf',width = 10,height = 18)
 Heatmap(t(cluster.score.normailzed), 
         width = unit(15, "cm"), height = unit(30, "cm"),column_names_rot = 45,cluster_columns = F, cluster_rows = F, 
         show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 8),rect_gp = gpar(col = 'white'),
         column_names_gp = gpar(fontsize = 8),
         heatmap_legend_param = list(
-          title = "Expression", at = c(0, 1), 
+          title = "Expression", at = c(0,1), 
           labels = c("min", "max")),col = Palettes[['blueRed']])
 dev.off()
 
@@ -793,7 +792,7 @@ dev.off()
 #           labels = c("min", "max")),col = Palettes[['blueRed']])
 # dev.off()
 
-pdf('./3.1Subcluster_T/Annotate/celltype_expression.dotplot.pdf',width = 15,height = 8)
+pdf('./3.1Subcluster_T/Annotate/celltype_expression.dotplot.pdf',width = 18,height = 8)
 Idents(sub.T) <- sub.T$celltype
 DotPlot(subset(sub.T,subset = minor_celltype!='CD4Tun'),features = genelist,cols = c('grey','red'),scale.by = 'size',col.min = 0,scale.min = -5) + 
   theme(axis.text.x = element_text(size = 8)) + coord_flip()

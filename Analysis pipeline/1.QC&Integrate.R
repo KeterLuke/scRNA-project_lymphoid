@@ -7,38 +7,67 @@ library(clustree)
 library(ggpubr)
 library(dplyr)
 library(patchwork)
+library(ComplexHeatmap)
 library(circlize)
 library(vegan)
-library(ggplot2)
-library(future)
 set.seed(101)
+library(openxlsx)
+library(future)
+library(colourpicker)
+library(cowplot)
+plan("multisession", workers = 11) 
+options(future.globals.maxSize = 80000 * 1024^2)
 setwd('../')
 getwd()
-options(future.globals.maxSize = 80000*1024^2)
-plan("multisession",workers = 11)
+source('./function/colorPalettes.R')
+source('./function/ratio_plot.R')
 ####read samples####
-sce <- Read10X('./raw/filtered_feature_bc_matrix/')
-
+C4_6 <- Read10X('./raw/C4_6/filtered_feature_bc_matrix/')
+T4_6 <- Read10X('./raw/T4_6/filtered_feature_bc_matrix/')
+N6_15 <- Read10X('./raw/N6_15/filtered_feature_bc_matrix/')
+T6_15 <- Read10X('./raw/T6_15/filtered_feature_bc_matrix/')
+N6_8 <- Read10X('./raw/N6_8/filtered_feature_bc_matrix/')
+T6_8 <- Read10X('./raw/T6_8/filtered_feature_bc_matrix/')
 ####Preliminary filtration####
 #min.cell >3 & min.features >200   
-sce <- CreateSeuratObject(counts = sce,
-                   min.cells = 3,
-                   min.features = 200,
-                   project = 'lympho')
-index <- gsub(pattern = '[A-Z]*-',replacement = "",colnames(sce))
-head(index)
-table(index)
-sce$sample <- ifelse(index=='1','C4_6',
-                     ifelse(index=='2','N6_15',
-                            ifelse(index=='3','N6_8',
-                                   ifelse(index=='4','T4_6',
-                                          ifelse(index=='5','T6_15',
-                                                 ifelse(index=='6','T6_8',NA))))))
+C4_6 <- CreateSeuratObject(counts = C4_6,
+                          min.cells = 3,
+                          min.features = 200,
+                          project = 'C4_6')
+T4_6 <- CreateSeuratObject(counts = T4_6,
+                           min.cells = 3,
+                           min.features = 200,
+                           project = 'T4_6')
+N6_15 <- CreateSeuratObject(counts = N6_15,
+                           min.cells = 3,
+                           min.features = 200,
+                           project = 'N6_15')
+T6_15 <- CreateSeuratObject(counts = T6_15,
+                            min.cells = 3,
+                            min.features = 200,
+                            project = 'T6_15')
+N6_8 <- CreateSeuratObject(counts = N6_8,
+                            min.cells = 3,
+                            min.features = 200,
+                            project = 'N6_8')
+T6_8 <- CreateSeuratObject(counts = T6_8,
+                           min.cells = 3,
+                           min.features = 200,
+                           project = 'T6_8')
+scelist <- list(C4_6 = C4_6,
+                T4_6 = T4_6,
+                N6_15 = N6_15,
+                T6_15 = T6_15,
+                N6_8 = N6_8,
+                T6_8 = T6_8)
+sce = merge(scelist[[1]], y = scelist[2:length(scelist)],add.cell.ids <- names(scelist))
+sce$sample <- sce$orig.ident
 table(sce$sample)
-sce$orig.ident <- sce$sample
-table(sce$orig.ident)
 View(sce@meta.data)
-
+####quality control####
+sce$nUMI <- sce$nCount_RNA
+sce$nGene <- sce$nFeature_RNA
+sce$log10GenesPerUMI <- log10(sce$nGene)/log10(sce$nUMI)
 ## Mitochondrial gene ratio
 sce[["percent.mt"]] <- PercentageFeatureSet(sce, pattern = "^MT-")
 ## Ribosome gene ratio
@@ -49,19 +78,22 @@ sce[["percent.hb"]] <- PercentageFeatureSet(sce, pattern = "^HBA|^HBB")
 #### Draw a statistical graph of the number of genes/count number/proportion of mitochondrial genes
 dir.create('./1.QualityControl')
 pdf(file = "1.QualityControl/count.feature.mt.pdf",width = 10)
-VlnPlot(sce, features = c("nFeature_RNA", "nCount_RNA", "percent.mt","percent.rb","percent.hb"))
+VlnPlot(sce, features = c("nFeature_RNA", "nCount_RNA", "percent.mt","percent.rb","percent.hb"),ncol = 3)
 plot1 <- FeatureScatter(sce, feature1 = "nCount_RNA", feature2 = "percent.mt")
 ploT1 <- FeatureScatter(sce, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + ploT1
 
 ggdensity(sce@meta.data, x = "nCount_RNA", title = "nCount")
-ggdensity(sce@meta.data, x = "nFeature_RNA", title = "nFeature") + geom_vline(xintercept = 300)
-ggdensity(sce@meta.data, x = "percent.rb", title = "percent.rb")
+ggdensity(sce@meta.data, x = "nFeature_RNA", title = "nFeature") + geom_vline(xintercept = 500)
+ggdensity(sce@meta.data, x = "log10GenesPerUMI", title = "log10GenesPerUMI") + geom_vline(xintercept = 0.8)
+ggdensity(sce@meta.data, x = "percent.rb", title = "percent.rb") +  geom_vline(xintercept = 8)
 dev.off()
 
 #### Detect the resolution parameters by each sample cluster ####
 ##After the parameters are determined, you can block them without executing [test]
-sce_obj <- subset(sce, subset = nFeature_RNA > 300 & percent.mt < 10 & nCount_RNA > 500 & nFeature_RNA < 3000 & nCount_RNA < 15000 & percent.rb > 8 & percent.hb < 0.1) 
+sce_obj <- subset(sce, subset = nFeature_RNA > 600 & percent.mt < 10 & nCount_RNA > 1000 &
+                  nFeature_RNA < 4000 & nCount_RNA < 20000 & percent.rb > 8 & percent.hb < 0.1 & 
+                  log10GenesPerUMI > 0.8) 
 
 pdf("1.QualityControl/filtered.statistics.pdf")
 source('./function/colorPalettes.R')
@@ -69,6 +101,9 @@ VlnPlot(object = sce_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt
 FeatureScatter(object = sce_obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident")
 FeatureScatter(object = sce_obj, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident")
 dev.off()
+sce_obj$mito.ratio <- sce_obj$percent.mt/100
+source('./function/do_qc_plot.R')
+do_qc_plot(sce_obj,dir = './1.QualityControl')
 sce_obj <- SplitObject(sce_obj,split.by = 'orig.ident')
 ##C4_6
 C4_6 <- sce_obj[['C4_6']]
@@ -101,15 +136,15 @@ sce_obj <- FindVariableFeatures(sce_obj,nfeatures = 3000,verbose = F)
 sce_obj <- ScaleData(sce_obj,vars.to.regress = c("nCount_RNA", "percent.mt"),features = VariableFeatures(sce_obj),verbose = F)
 sce_obj <- RunPCA(sce_obj, npcs = 100, verbose = FALSE)
 do_Elbow_quantitative(sce_obj,harmony = F)
-sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:9, verbose = FALSE)
+sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:12, verbose = FALSE)
 sce_obj  <- FindClusters(object = sce_obj , resolution = set.resolutions, verbose = FALSE) 
 pdf(file = "1.QualityControl/C4_6_PCA-test.pdf",width =15)
 clustree(sce_obj)
-sce_obj  <- RunUMAP(sce_obj , dims = 1:9)
+sce_obj  <- RunUMAP(sce_obj , dims = 1:12)
 sce.res <- sapply(set.resolutions, function(x){
-    p <- DimPlot(object = sce_obj, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
-    print(p)
-  })
+  p <- DimPlot(object = sce_obj, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
+  print(p)
+})
 
 dev.off()
 saveRDS(sce_obj,file = './C4_6_afterqc.RDS')
@@ -121,11 +156,11 @@ sce_obj <- FindVariableFeatures(sce_obj,nfeatures = 3000,verbose = F)
 sce_obj <- ScaleData(sce_obj,vars.to.regress = c("nCount_RNA", "percent.mt"),features = VariableFeatures(sce_obj),verbose = F)
 sce_obj <- RunPCA(sce_obj, npcs = 100, verbose = FALSE)
 do_Elbow_quantitative(sce_obj,harmony = F)
-sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:10, verbose = FALSE)
+sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:9, verbose = FALSE)
 sce_obj  <- FindClusters(object = sce_obj , resolution = set.resolutions, verbose = FALSE) 
 pdf(file = "1.QualityControl/T4_6_PCA-test.pdf",width =15)
 clustree(sce_obj)
-sce_obj  <- RunUMAP(sce_obj , dims = 1:10)
+sce_obj  <- RunUMAP(sce_obj , dims = 1:9)
 sce.res <- sapply(set.resolutions, function(x){
   p <- DimPlot(object = sce_obj, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
   print(p)
@@ -161,11 +196,11 @@ sce_obj <- FindVariableFeatures(sce_obj,nfeatures = 3000,verbose = F)
 sce_obj <- ScaleData(sce_obj,vars.to.regress = c("nCount_RNA", "percent.mt"),features = VariableFeatures(sce_obj),verbose = F)
 sce_obj <- RunPCA(sce_obj, npcs = 100, verbose = FALSE)
 do_Elbow_quantitative(sce_obj,harmony = F)
-sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:10, verbose = FALSE)
+sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:17, verbose = FALSE)
 sce_obj  <- FindClusters(object = sce_obj , resolution = set.resolutions, verbose = FALSE)
 pdf(file = "1.QualityControl/T6_8_PCA-test.pdf",width =15)
 clustree(sce_obj)
-sce_obj  <- RunUMAP(sce_obj , dims = 1:10)
+sce_obj  <- RunUMAP(sce_obj , dims = 1:17)
 sce.res <- sapply(set.resolutions, function(x){
   p <- DimPlot(object = sce_obj, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
   print(p)
@@ -182,11 +217,11 @@ sce_obj <- FindVariableFeatures(sce_obj,nfeatures = 3000,verbose = F)
 sce_obj <- ScaleData(sce_obj,vars.to.regress = c("nCount_RNA", "percent.mt"),features = VariableFeatures(sce_obj),verbose = F)
 sce_obj <- RunPCA(sce_obj, npcs = 100, verbose = FALSE)
 do_Elbow_quantitative(sce_obj,harmony = F)
-sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:13, verbose = FALSE)
+sce_obj  <- FindNeighbors(object = sce_obj , dims = 1:12, verbose = FALSE)
 sce_obj  <- FindClusters(object = sce_obj , resolution = set.resolutions, verbose = FALSE)
 pdf(file = "1.QualityControl/N6_15_PCA-test.pdf",width =15)
 clustree(sce_obj)
-sce_obj  <- RunUMAP(sce_obj , dims = 1:13)
+sce_obj  <- RunUMAP(sce_obj , dims = 1:12)
 sce.res <- sapply(set.resolutions, function(x){
   p <- DimPlot(object = sce_obj, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
   print(p)
@@ -224,17 +259,17 @@ dir.create('./doublet')
 ####C4_6
 sce <- readRDS('./C4_6_afterqc.RDS')
 pdf("1.QualityControl/C4_6_doublet.pdf")
-sce <- doubletDetect(Seurat.object = sce, PCs = 1:9, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.2", sct = F)
+sce <- doubletDetect(Seurat.object = sce, PCs = 1:12, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.063
+##select:rate = 0.044
 saveRDS(sce,file = './doublet/C4_6_afterqc.RDS')
 
 ####T4_6
 sce <- readRDS('./T4_6_afterqc.RDS')
 pdf("1.QualityControl/T4_6_doublet.pdf")
-sce <- doubletDetect(Seurat.object = sce, PCs = 1:10, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
+sce <- doubletDetect(Seurat.object = sce, PCs = 1:9, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.053
+##select:rate = 0.056
 saveRDS(sce,file = './doublet/T4_6_afterqc.RDS')
 
 ####N6_8
@@ -242,32 +277,32 @@ sce <- readRDS('./N6_8_afterqc.RDS')
 pdf("1.QualityControl/N6_8_doublet.pdf")
 sce <- doubletDetect(Seurat.object = sce, PCs = 1:15, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.121
+##select:rate = 0.136
 saveRDS(sce,file = './doublet/N6_8_afterqc.RDS')
 
 ####T6_8
 sce <- readRDS('./T6_8_afterqc.RDS')
 pdf("1.QualityControl/T6_8_doublet.pdf")
-sce <- doubletDetect(Seurat.object = sce, PCs = 1:10, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
+sce <- doubletDetect(Seurat.object = sce, PCs = 1:17, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.089
+##select:rate = 0.095
 saveRDS(sce,file = './doublet/T6_8_afterqc.RDS')
 
 
 ####N6_15
 sce <- readRDS('./N6_15_afterqc.RDS')
 pdf("1.QualityControl/N6_15_doublet.pdf")
-sce <- doubletDetect(Seurat.object = sce, PCs = 1:13, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
+sce <- doubletDetect(Seurat.object = sce, PCs = 1:12, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.067
+##select:rate = 0.070
 saveRDS(sce,file = './doublet/N6_15_afterqc.RDS')
 
 ####T6_15
 sce <- readRDS('./T6_15_afterqc.RDS')
 pdf("1.QualityControl/T6_15_doublet.pdf")
-sce <- doubletDetect(Seurat.object = sce, PCs = 1:8, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.5", sct = F)
+sce <- doubletDetect(Seurat.object = sce, PCs = 1:8, doublet.rate = ncol(sce)*8*1e-6, annotation = "RNA_snn_res.0.1", sct = F)
 dev.off()
-##select:rate = 0.052
+##select:rate = 0.054
 saveRDS(sce,file = './doublet/T6_15_afterqc.RDS')
 
 #####subset singlet####
@@ -330,13 +365,8 @@ rm(list = setdiff(ls(),c('scelist','variableFeatureSelection')))
 sce.list.Standard <- variableFeatureSelection(seurat.lists = scelist, method = "Standard", nfeatures = 3000)
 saveRDS(sce.list.Standard, file = "./sce.list.Standard.3000.rds")
 
-sce.list.SCT <- variableFeatureSelection(seurat.lists = scelist, method = "SCT", nfeatures = 3000,return.only.var.genes = T)
-saveRDS(sce.list.SCT, file = "./sce.list.SCT.3000.rds")
-
-rm(scelist)
-
 ## Remove previous clustering results and doublet detection results
-data.merge <- merge(sce.list.SCT[[1]], y = sce.list.SCT[2:length(sce.list.SCT)],add.cell.ids = names(sce.list.SCT))
+data.merge <- merge(sce.list.Standard[[1]], y = sce.list.Standard[2:length(sce.list.Standard)])
 index <- match(paste0("RNA_snn_res.", seq(0.1,1, by=0.1)), colnames(data.merge@meta.data))
 data.merge@meta.data <- data.merge@meta.data[,-index]
 index <- match(grep('DF.classification',colnames(data.merge@meta.data),value = T),colnames(data.merge@meta.data))
@@ -345,14 +375,15 @@ index <- match(grep('pANN',colnames(data.merge@meta.data),value = T),colnames(da
 data.merge@meta.data <- data.merge@meta.data[,-index]
 View(data.merge@meta.data)
 
-# assay=SCT
-DefaultAssay(data.merge) <- "SCT"
-seurat.features.SCT <- SelectIntegrationFeatures(object.list = sce.list.SCT, nfeatures = 3000)
-VariableFeatures(data.merge) <- seurat.features.SCT
 # assay=RNA
 DefaultAssay(data.merge) <- "RNA"
 seurat.features.RNA <- SelectIntegrationFeatures(object.list = sce.list.Standard, nfeatures = 3000)
 VariableFeatures(data.merge) <- seurat.features.RNA
+####remove cells coexpress cell type markers####
+cells1 <- WhichCells(data.merge,expression = CD3D&CD3E&CD79A&MS4A1 > 0)
+cells <- colnames(data.merge)
+cells <- setdiff(cells,cells1)
+data.merge <- subset(data.merge,cells = cells)
 data.merge <- NormalizeData(data.merge, verbose = FALSE)
 data.merge <- ScaleData(data.merge, verbose = FALSE, vars.to.regress = c("nCount_RNA", "percent.mt"), features = VariableFeatures(data.merge))
 saveRDS(data.merge, file = "./data.merge.rds")
@@ -366,6 +397,8 @@ VlnPlot(object = data.merge, features = c("nFeature_RNA", "nCount_RNA", "percent
 FeatureScatter(object = data.merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident")
 FeatureScatter(object = data.merge, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident")
 dev.off()
+source('./function/do_qc_plot.R')
+do_qc_plot(data.merge,dir = '1.QualityControl')
 # Draw the distribution of the number of samples
 cell.number <- as.data.frame(table(data.merge$orig.ident))
 pdf("1.QualityControl/sample.distribution.pdf")
@@ -373,12 +406,11 @@ ggbarplot(cell.number, x="Var1", y="Freq", fill = "Var1", color = "Var1", palett
           sort.by.groups=FALSE, #不按组排序
           label = T, xlab = "", ylab = "Cell Number") + theme(legend.position="none") 
 dev.off()
-
 #### Assess the cell cycle effect
 s.genes <- cc.genes$s.genes
 g2m.genes <- cc.genes$g2m.genes
 data.merge <- CellCycleScoring(data.merge, s.features = s.genes, g2m.features = g2m.genes, set.ident = F)
-data.merge <- RunPCA(data.merge, features = c(s.genes, g2m.genes))
+data.merge <- RunPCA(data.merge, features = c(s.genes, g2m.genes),verbose = F)
 pdf("1.QualityControl/cellCycle.afterMerge.pdf")
 DimPlot(data.merge, dims = c(1, 2), reduction = "pca", group.by = "Phase")
 DimPlot(data.merge, dims = c(1, 3), reduction = "pca", group.by = "Phase")
@@ -389,25 +421,9 @@ saveRDS(data.merge, file = "./data.merge.rds")
 rm(list = ls())
 data.merge <- readRDS('./data.merge.rds')
 set.resolutions <- seq(0.1, 1, by = 0.1)
-#### First observe whether the clustering effect will depend on the sample
-a <- data.merge
-a <- RunPCA(a, npcs = 50, verbose = T)
-pdf("1.QualityControl/merge.observe.batch.pdf",width = 16)
-a <- FindNeighbors(a, dims = 1:40, verbose = T)
-a <- FindClusters(object = a, resolution = set.resolutions, verbose = T) 
-clustree(a)
-a <- RunUMAP(a, dims = 1:40)
-DimPlot(object = a, reduction = 'umap',label = TRUE, split.by = "orig.ident",ncol = 3)
-DimPlot(object = a, reduction = 'umap',label = TRUE, split.by = 'Phase')
-merge.res <- sapply(set.resolutions, function(x){
-  p <- DimPlot(object = a, reduction = 'umap',label = TRUE, group.by = paste0("RNA_snn_res.", x))
-  print(p)
-})
-dev.off()
-
 ######correct batch effect####
 options(future.globals.maxSize = 80000*1024^2)
-plan("multisession",workers = 11)
+plan("multisession",workers = 1)
 rm(list = ls())
 data.merge <- readRDS('./data.merge.rds')
 dir.create('./2.Cluster')
@@ -419,13 +435,15 @@ data.merge <- RunPCA(data.merge, verbose = FALSE, npcs = 100)
 #assay.use defaults to RNA. If the SCTransform standardization method is used, you need to specify assay.use="SCT" in RunHarmony
 #Compare the differences between the two modes and find that the default is better and more complete
 data.merge <- RunHarmony(object = data.merge, group.by.vars = "orig.ident", assay.use='RNA', verbose = FALSE)
-PC <- 30
+source('./function/do_Elbow_quantitative_modified_by_lhc.R')
+do_Elbow_quantitative(data.merge,harmony = T)
+PC <- 35
 data.merge <- RunUMAP(data.merge, reduction = "harmony", dims = 1:PC, verbose = FALSE)
 data.merge <- RunTSNE(data.merge, reduction = "harmony", dims = 1:PC, verbose = FALSE)
 data.merge <- FindNeighbors(data.merge, dims = 1:PC, reduction = "harmony", verbose = FALSE) #使用harmony替代PCA
 set.resolutions = seq(0.1, 1, by = 0.1)
 data.merge <- FindClusters(data.merge, resolution = set.resolutions, verbose = FALSE)
-pdf('2.Cluster/RNA.Harmony.Integration.pc30.pdf')
+pdf('2.Cluster/RNA.Harmony.Integration.pc35.pdf')
 p <- clustree(data.merge)
 print(p)
 p <- DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "orig.ident")
@@ -441,81 +459,312 @@ merge.res <- sapply(set.resolutions, function(x){
   print(p)
 })
 dev.off()
-saveRDS(data.merge,file = './RNA.Harmony.Integration.PC30.rds')
+saveRDS(data.merge,file = './RNA.Harmony.Integration.PC35.rds')
 
-####select: RNA harmony pc30; res = 0.4
+####select: RNA harmony pc35,res:0.2
+data.merge <- readRDS('./RNA.Harmony.Integration.PC35.rds')
+data.merge <- RunUMAP(data.merge,reduction = "harmony", dims = 1:35,seed.use = 50, verbose = FALSE)
+data.merge <- RunTSNE(data.merge,reduction = "harmony", dims = 1:35,seed.use = 50, verbose = FALSE)
+pdf('2.Cluster/RNA.Harmony.Integration.pc35.pro.pdf')
+p <- clustree(data.merge)
+print(p)
+p <- DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+p <- DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+dev.off()
+saveRDS(data.merge,file = './data.merge.pro.rds')
+####The expression of the classic marker#####
+data.merge <- readRDS('./data.merge.pro.rds')
+pdf('./2.Cluster/observe.expression.T.B.pdf')
+FeaturePlot(data.merge,features = c('MS4A1','CD19','CD79A','CD79B'),reduction ='umap',order = T,min.cutoff = 1)
+FeaturePlot(data.merge,features = c('CD7','CD3D','CD3E','CD3G'),reduction ='umap',order = T,min.cutoff = 1)
+dev.off()
+data.merge$seurat_clusters <- data.merge$RNA_snn_res.0.2
+data.merge$seurat_clusters <- factor(data.merge$seurat_clusters,levels = as.character(0:15))
+table(data.merge$seurat_clusters)
+cell.type.markers <- read.table(file = "2.Cluster/CellMarker_lowres.txt", header = T, stringsAsFactors = F, sep = "\t")
 
+exp.matrix <- GetAssayData(data.merge, slot = "data")
+index <- match(cell.type.markers$Gene, rownames(exp.matrix))
+gene.matrix <- exp.matrix[na.omit(index),]
+cell.type.markers <- cell.type.markers[which(!is.na(index)),]
 
-# ####sct
-# sce.list.SCT <- readRDS('./doublet_highs/sce.list.SCT.3000.rds')
-# seurat.features <- SelectIntegrationFeatures(object.list = sce.list.SCT, nfeatures = 3000)
-# sce.list.SCT <- PrepSCTIntegration(object.list = sce.list.SCT, anchor.features = seurat.features)
-# seurat.anchors <- FindIntegrationAnchors(object.list = sce.list.SCT, normalization.method = "SCT", anchor.features = seurat.features)
-# saveRDS(seurat.anchors,file = './doublet_high/sct_anchors.rds')
-# 
-# seurat_anchors <- readRDS('./doublet_high/sct_anchors.rds')
-# data.merge.seurat <- IntegrateData(anchorset = seurat_anchors, normalization.method = "SCT")           
-# DefaultAssay(data.merge.seurat) <- "integrated"
-# data.merge.seurat <- ScaleData(data.merge.seurat)
-# data.merge.seurat <- RunPCA(data.merge.seurat, verbose = FALSE, npcs = 100)
-# pdf('2.Cluster/doublet high/SCT.SCT.Integration.pc40.pdf')
-# PC <- 40
-# set.resolutions = seq(0.1, 1, by = 0.1)
-# data.merge.seurat <- RunUMAP(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# data.merge.seurat <- RunTSNE(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# data.merge.seurat <- FindNeighbors(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# data.merge.seurat <- FindClusters(data.merge.seurat, resolution = set.resolutions, verbose = FALSE)
-# p <- clustree(data.merge.seurat)
-# print(p)
-# p <- DimPlot(object = data.merge.seurat, reduction = 'umap',label = TRUE, group.by = "orig.ident")
-# print(p)
-# merge.res <- sapply(set.resolutions, function(x){
-#   p <- DimPlot(object = data.merge.seurat, reduction = 'umap',label = TRUE, group.by = paste0("integrated_snn_res.", x)) + NoLegend()
-#   print(p)
-# })
-# p <- DimPlot(object = data.merge.seurat, reduction = 'tsne',label = TRUE, group.by = "orig.ident")
-# print(p)
-# merge.res <- sapply(set.resolutions, function(x){
-#   p <- DimPlot(object = data.merge.seurat, reduction = 'tsne',label = TRUE, group.by = paste0("integrated_snn_res.", x)) + NoLegend()
-#   print(p)
-# })
-# 
-# dev.off()
-# saveRDS(data.merge.seurat, file = "./doublet_high/SCT.SCT.Integration.PC40.rds")
-# 
-# ####cca
-# sce.list.Standard <- readRDS('./doublet_high/sce.list.Standard.3000.rds')
-# seurat.features <- SelectIntegrationFeatures(object.list = sce.list.Standard, nfeatures = 3000)
-# seurat.anchors <- FindIntegrationAnchors(object.list = sce.list.Standard, anchor.features = seurat.features)
-# saveRDS(seurat.anchors,file = './doublet_high/cca_anchors.rds')
-# 
-# seurat_anchors <- readRDS('./doublet_high/cca_anchors.rds')
-# data.merge.seurat <- IntegrateData(anchorset = seurat_anchors)           
-# DefaultAssay(data.merge.seurat) <- "integrated"
-# data.merge.seurat <- ScaleData(data.merge.seurat)
-# data.merge.seurat <- RunPCA(data.merge.seurat, verbose = FALSE, npcs = 100)
-# pdf('2.Cluster/doublet high/RNA.standard.Integration.pc30.pdf')
-# 
-# PC <- 30
-# data.merge.seurat <- RunUMAP(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# data.merge.seurat <- RunTSNE(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# data.merge.seurat <- FindNeighbors(data.merge.seurat, reduction = "pca", dims = 1:PC, verbose = FALSE)
-# set.resolutions = seq(0.1, 1, by = 0.1)
-# data.merge.seurat <- FindClusters(data.merge.seurat, resolution = set.resolutions, verbose = FALSE)
-# p <- clustree(data.merge.seurat)
-# print(p)
-# p <- DimPlot(object = data.merge.seurat, reduction = 'umap',label = TRUE, group.by = "orig.ident")
-# print(p)
-# merge.res <- sapply(set.resolutions, function(x){
-#   p <- DimPlot(object = data.merge.seurat, reduction = 'umap',label = TRUE, group.by = paste0("integrated_snn_res.", x)) + NoLegend()
-#   print(p)
-# })
-# p <- DimPlot(object = data.merge.seurat, reduction = 'tsne',label = TRUE, group.by = "orig.ident")
-# print(p)
-# merge.res <- sapply(set.resolutions, function(x){
-#   p <- DimPlot(object = data.merge.seurat, reduction = 'tsne',label = TRUE, group.by = paste0("integrated_snn_res.", x)) + NoLegend()
-#   print(p)
-# })
-# 
-# dev.off()
-# saveRDS(data.merge.seurat, file = "./doublet_high/RNA.cca.Integration.PC30.rds")
+# Calculate the average expression of the cell type of each cluster
+cluster.score <- apply(gene.matrix, 1, function(x){
+  a <- tapply(x, data.merge$seurat_clusters, mean)
+  return(a)
+})
+cluster.score.normailzed <- decostand(cluster.score, "range", 2) ##perform 0-1 standardization for all clusters per gene
+cellType.cluster.score <- apply(cluster.score, 1, function(x){
+  a <- tapply(x, cell.type.markers$Celltype, mean)
+  return(a)
+})
+cellType.cluster.score.normailzed <- decostand(cellType.cluster.score, "range", 1)##perform 0-1 standardization for all clusters per celltype marker
+annotation.colors <- Palettes$stallion2[1:length(unique(cell.type.markers$Celltype))]
+names(annotation.colors) <- unique(cell.type.markers$Celltype)
+row.annotations <- rowAnnotation(Type = factor(cell.type.markers$Celltype, 
+                                               levels = unique(cell.type.markers$Celltype)),
+                                 col = list(Type = annotation.colors),show_annotation_name = F)
+pdf("2.Cluster/cluster.signature.expression.pdf")
+col_fun1 <- colorRamp2(c(0, 1.5), c("grey", "#ff5a36"))
+col_fun2 <- colorRamp2(c(0, 0.5, 1), c("#1e90ff", "white", "#ff5a36"))
+
+row_split <- factor(cell.type.markers$Celltype, levels = unique(cell.type.markers$Celltype))
+Heatmap(t(cluster.score.normailzed), col = col_fun2, row_split = row_split, left_annotation = row.annotations,
+        width = unit(10, "cm"), height = unit(16, "cm"), cluster_columns = F, cluster_rows = F, 
+        show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 6), 
+        column_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+Heatmap(cellType.cluster.score, name = "Expression", col = col_fun1, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = T, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 8), column_names_gp = gpar(fontsize = 6))
+Heatmap(cellType.cluster.score.normailzed, col = col_fun2, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = F, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 5), column_names_gp = gpar(fontsize = 6), 
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+a <- data.merge
+a$seurat_clusters <- factor(a$seurat_clusters, levels = rownames(cluster.score.normailzed))
+cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
+gene_list <- list(T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
+                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
+                  cycling = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Cycling'],
+                  Plasma = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Plasma'],
+                  NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
+                  Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
+                  Epi = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Epi'],
+                  Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo'],
+                  Fibro = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Fibro'],
+                  Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth'])
+library(GEB)
+DotPlot_ByColumnList(object = a,features = gene_list,group.by = "RNA_snn_res.0.4",dot.scale = 4)
+dev.off()
+####remove doublet by coexpression of markers####
+Idents(data.merge) <- data.merge$seurat_clusters
+cells <- c(WhichCells(data.merge,idents = '9',expression = CD3D&CD3E&CD3G>0),
+           WhichCells(data.merge,idents = '10',expression = CD3D&CD3E&CD3G>0),
+           WhichCells(data.merge,idents = '11',expression = CD3D&CD3E&CD3G>0),
+           WhichCells(data.merge,idents = c('2','3'),expression = CD3D&CD3E&CD3G>1),
+           WhichCells(data.merge,idents = c('0','1','4','5','6','7','8'),expression = MS4A1&CD79B>1))
+allcells <- colnames(data.merge)
+cells_filtered <- setdiff(allcells,cells)
+data.merge.filtered <- subset(data.merge,cells = cells_filtered)
+#rerun integration
+dir.create('./2.Cluster/filtered')
+data.merge.filtered <- NormalizeData(data.merge.filtered,verbose = F)
+data.merge.filtered <- FindVariableFeatures(data.merge.filtered,nfeatures = 3000,verbose = F)
+data.merge.filtered <- ScaleData(data.merge.filtered,features = VariableFeatures(data.merge.filtered))
+data.merge.filtered <- RunPCA(data.merge.filtered, verbose = FALSE, npcs = 100)
+#If dims.use is not specified, all PCs will be used by default
+#assay.use defaults to RNA. If the SCTransform standardization method is used, you need to specify assay.use="SCT" in RunHarmony
+#Compare the differences between the two modes and find that the default is better and more complete
+data.merge.filtered <- RunHarmony(object = data.merge.filtered, group.by.vars = "orig.ident", assay.use='RNA', verbose = FALSE)
+source('./function/do_Elbow_quantitative_modified_by_lhc.R')
+do_Elbow_quantitative(data.merge.filtered,harmony = T)
+PC <- 20
+data.merge.filtered <- RunUMAP(data.merge.filtered, reduction = "harmony", dims = 1:PC, verbose = FALSE)
+data.merge.filtered <- RunTSNE(data.merge.filtered, reduction = "harmony", dims = 1:PC, verbose = FALSE)
+data.merge.filtered <- FindNeighbors(data.merge.filtered, dims = 1:PC, reduction = "harmony", verbose = FALSE) #使用harmony替代PCA
+set.resolutions = seq(0.1, 1, by = 0.1)
+data.merge.filtered <- FindClusters(data.merge.filtered, resolution = set.resolutions, verbose = FALSE)
+pdf('2.Cluster/filtered/RNA.Harmony.Integration.pc20.pdf')
+p <- clustree(data.merge.filtered)
+print(p)
+p <- DimPlot(object = data.merge.filtered, reduction = 'umap',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge.filtered, reduction = 'umap',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+p <- DimPlot(object = data.merge.filtered, reduction = 'tsne',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge.filtered, reduction = 'tsne',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+dev.off()
+saveRDS(data.merge.filtered,file = './2.Cluster/filtered/data.merge.filtered.pc20.rds')
+####select pc20,res:0.3
+data.merge <- readRDS('./2.Cluster/filtered/data.merge.filtered.pc20.rds')
+pdf('./2.Cluster/observe.expression.T.B.pdf')
+FeaturePlot(data.merge,features = c('MS4A1','CD19','CD79A','CD79B'),reduction ='umap',order = T,min.cutoff = 1)
+FeaturePlot(data.merge,features = c('CD7','CD3D','CD3E','CD3G'),reduction ='umap',order = T,min.cutoff = 1)
+dev.off()
+data.merge$seurat_clusters <- data.merge$RNA_snn_res.0.3
+data.merge$seurat_clusters <- factor(data.merge$seurat_clusters,levels = as.character(0:13))
+table(data.merge$seurat_clusters)
+cell.type.markers <- read.table(file = "2.Cluster/CellMarker_lowres.txt", header = T, stringsAsFactors = F, sep = "\t")
+
+exp.matrix <- GetAssayData(data.merge, slot = "data")
+index <- match(cell.type.markers$Gene, rownames(exp.matrix))
+gene.matrix <- exp.matrix[na.omit(index),]
+cell.type.markers <- cell.type.markers[which(!is.na(index)),]
+
+# Calculate the average expression of the cell type of each cluster
+cluster.score <- apply(gene.matrix, 1, function(x){
+  a <- tapply(x, data.merge$seurat_clusters, mean)
+  return(a)
+})
+cluster.score.normailzed <- decostand(cluster.score, "range", 2) ##perform 0-1 standardization for all clusters per gene
+cellType.cluster.score <- apply(cluster.score, 1, function(x){
+  a <- tapply(x, cell.type.markers$Celltype, mean)
+  return(a)
+})
+cellType.cluster.score.normailzed <- decostand(cellType.cluster.score, "range", 1)##perform 0-1 standardization for all clusters per celltype marker
+annotation.colors <- Palettes$stallion2[1:length(unique(cell.type.markers$Celltype))]
+names(annotation.colors) <- unique(cell.type.markers$Celltype)
+row.annotations <- rowAnnotation(Type = factor(cell.type.markers$Celltype, 
+                                               levels = unique(cell.type.markers$Celltype)),
+                                 col = list(Type = annotation.colors),show_annotation_name = F)
+pdf("2.Cluster/cluster.signature.expression.pdf")
+col_fun1 <- colorRamp2(c(0, 1.5), c("grey", "#ff5a36"))
+col_fun2 <- colorRamp2(c(0, 0.5, 1), c("#1e90ff", "white", "#ff5a36"))
+
+row_split <- factor(cell.type.markers$Celltype, levels = unique(cell.type.markers$Celltype))
+Heatmap(t(cluster.score.normailzed), col = col_fun2, row_split = row_split, left_annotation = row.annotations,
+        width = unit(10, "cm"), height = unit(16, "cm"), cluster_columns = F, cluster_rows = F, 
+        show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 6), 
+        column_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+Heatmap(cellType.cluster.score, name = "Expression", col = col_fun1, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = T, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 8), column_names_gp = gpar(fontsize = 6))
+Heatmap(cellType.cluster.score.normailzed, col = col_fun2, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = F, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 5), column_names_gp = gpar(fontsize = 6), 
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+a <- data.merge
+a$seurat_clusters <- factor(a$seurat_clusters, levels = rownames(cluster.score.normailzed))
+cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
+gene_list <- list(T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
+                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
+                  cycling = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Cycling'],
+                  Plasma = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Plasma'],
+                  NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
+                  Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
+                  Epi = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Epi'],
+                  Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo'],
+                  Fibro = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Fibro'],
+                  Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth'])
+library(GEB)
+DotPlot_ByColumnList(object = a,features = gene_list,group.by = "RNA_snn_res.0.4",dot.scale = 4)
+dev.off()
+####rerun dimension reduction
+data.merge <- readRDS('./2.Cluster/filtered/data.merge.filtered.pc20.rds')
+data.merge$seurat_clusters <- data.merge$RNA_snn_res.0.3
+data.merge$seurat_clusters <- factor(data.merge$seurat_clusters,levels = as.character(0:13))
+table(data.merge$seurat_clusters)
+Idents(data.merge) <- data.merge$seurat_clusters
+data.merge <- RunUMAP(data.merge,reduction = 'harmony',dims = 1:20,seed.use = 45,verbose = F)
+data.merge <- RunTSNE(data.merge,reduction = 'harmony',dims = 1:20,seed.use = 45,verbose = F)
+pdf('2.Cluster/filtered/RNA.Harmony.Integration.pc20.seed45.pdf')
+set.resolutions <- seq(0.1,1,0.1)
+p <- clustree(data.merge)
+print(p)
+p <- DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+p <- DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "orig.ident")
+print(p)
+merge.res <- sapply(set.resolutions, function(x){
+  p <- DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = paste0('RNA', "_snn_res.", x)) + NoLegend()
+  print(p)
+})
+dev.off()
+saveRDS(data.merge,file = './2.Cluster/filtered/data.merge.filtered.pc20.seed45.rds')
+####select pc20 res:0.4
+data.merge <- readRDS('./2.Cluster/filtered/data.merge.filtered.pc20.seed45.rds')
+pdf('./2.Cluster/observe.expression.T.B.pdf')
+FeaturePlot(data.merge,features = c('MS4A1','CD19','CD79A','CD79B'),reduction ='umap',order = T,min.cutoff = 1)
+FeaturePlot(data.merge,features = c('CD7','CD3D','CD3E','CD3G'),reduction ='umap',order = T,min.cutoff = 1)
+dev.off()
+data.merge$seurat_clusters <- data.merge$RNA_snn_res.0.4
+table(data.merge$seurat_clusters)
+data.merge$seurat_clusters <- factor(data.merge$seurat_clusters,levels = as.character(0:14))
+table(data.merge$seurat_clusters)
+cell.type.markers <- read.table(file = "2.Cluster/CellMarker_lowres.txt", header = T, stringsAsFactors = F, sep = "\t")
+
+exp.matrix <- GetAssayData(data.merge, slot = "data")
+index <- match(cell.type.markers$Gene, rownames(exp.matrix))
+gene.matrix <- exp.matrix[na.omit(index),]
+cell.type.markers <- cell.type.markers[which(!is.na(index)),]
+
+# Calculate the average expression of the cell type of each cluster
+cluster.score <- apply(gene.matrix, 1, function(x){
+  a <- tapply(x, data.merge$seurat_clusters, mean)
+  return(a)
+})
+cluster.score.normailzed <- decostand(cluster.score, "range", 2) ##perform 0-1 standardization for all clusters per gene
+cellType.cluster.score <- apply(cluster.score, 1, function(x){
+  a <- tapply(x, cell.type.markers$Celltype, mean)
+  return(a)
+})
+cellType.cluster.score.normailzed <- decostand(cellType.cluster.score, "range", 1)##perform 0-1 standardization for all clusters per celltype marker
+annotation.colors <- Palettes$stallion2[1:length(unique(cell.type.markers$Celltype))]
+names(annotation.colors) <- unique(cell.type.markers$Celltype)
+row.annotations <- rowAnnotation(Type = factor(cell.type.markers$Celltype, 
+                                               levels = unique(cell.type.markers$Celltype)),
+                                 col = list(Type = annotation.colors),show_annotation_name = F)
+pdf("2.Cluster/cluster.signature.expression.pdf")
+col_fun1 <- colorRamp2(c(0, 1.5), c("grey", "#ff5a36"))
+col_fun2 <- colorRamp2(c(0, 0.5, 1), c("#1e90ff", "white", "#ff5a36"))
+
+row_split <- factor(cell.type.markers$Celltype, levels = unique(cell.type.markers$Celltype))
+Heatmap(t(cluster.score.normailzed), col = col_fun2, row_split = row_split, left_annotation = row.annotations,
+        width = unit(10, "cm"), height = unit(16, "cm"), cluster_columns = F, cluster_rows = F, 
+        show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 6), 
+        column_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+Heatmap(cellType.cluster.score, name = "Expression", col = col_fun1, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = T, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 8), column_names_gp = gpar(fontsize = 6))
+Heatmap(cellType.cluster.score.normailzed, col = col_fun2, width = unit(8, "cm"), height = unit(8, "cm"), cluster_columns = T , cluster_rows = F, show_column_names = T, show_row_names = T, row_names_gp = gpar(fontsize = 5), column_names_gp = gpar(fontsize = 6), 
+        heatmap_legend_param = list(
+          title = "Expression", at = c(0, 1), 
+          labels = c("min", "max")))
+a <- data.merge
+a$seurat_clusters <- factor(a$seurat_clusters, levels = rownames(cluster.score.normailzed))
+cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
+gene_list <- list(T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
+                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
+                  cycling = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Cycling'],
+                  Plasma = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Plasma'],
+                  NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
+                  Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
+                  Epi = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Epi'],
+                  Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo'],
+                  Fibro = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Fibro'],
+                  Smooth = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Smooth'])
+library(GEB)
+DotPlot_ByColumnList(object = a,features = gene_list,group.by = "RNA_snn_res.0.4",dot.scale = 4)
+dev.off()
+####qc plot####
+DefaultAssay(data.merge) <- "RNA"
+pdf("1.QualityControl/doublet.removed.statistics.pdf")
+source('./function/colorPalettes.R')
+VlnPlot(object = data.merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, group.by = "orig.ident", cols = Palettes$group_pal[1:length(unique(data.merge@meta.data$orig.ident))], pt.size = 0)
+FeatureScatter(object = data.merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident")
+FeatureScatter(object = data.merge, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident")
+dev.off()
+source('./function/do_qc_plot.R')
+do_qc_plot(data.merge,dir = '1.QualityControl')
+# Draw the distribution of the number of samples
+cell.number <- as.data.frame(table(data.merge$orig.ident))
+pdf("1.QualityControl/sample.distribution.pdf")
+ggbarplot(cell.number, x="Var1", y="Freq", fill = "Var1", color = "Var1", palette = Palettes$group_pal[1:length(unique(data.merge@meta.data$orig.ident))],
+          sort.by.groups=FALSE, #不按组排序
+          label = T, xlab = "", ylab = "Cell Number") + theme(legend.position="none") 
+dev.off()
+
+saveRDS(data.merge,file = './2.Cluster/filtered/data.merge.filtered.pc20.seed45.rds')

@@ -15,26 +15,27 @@ library(openxlsx)
 library(future)
 library(colourpicker)
 library(cowplot)
-plan("multisession", workers = 11) 
+plan("multisession", workers = 1) 
 options(future.globals.maxSize = 80000 * 1024^2)
 setwd('../')
 getwd()
 source('./function/colorPalettes.R')
 source('./function/ratio_plot.R')
-
+library(plot1cell)
 #### Harmony corrected result####
-data.merge <- readRDS('RNA.Harmony.Integration.PC30.rds')
+####54136cells
+data.merge <- readRDS('./2.Cluster/filtered/data.merge.filtered.pc20.seed45.rds')
 DefaultAssay(data.merge) <- "RNA"
-
 ####res = 0.4####
 dir.create('./2.Cluster/Annotate')
-pdf("2.Cluster/Annotate/cluster.pdf")
 data.merge@meta.data$seurat_clusters <- data.merge@meta.data$RNA_snn_res.0.4
 length(unique(data.merge$seurat_clusters))
-
-DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "seurat_clusters",cols = Palettes[['mycols_15']])+NoLegend()
-DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "seurat_clusters",cols = Palettes[['mycols_15']])+NoLegend()
-DimPlot(object = data.merge,reduction = 'umap',label = TRUE,group.by = "seurat_clusters",cols = Palettes[['mycols_15']],split.by = 'orig.ident',ncol = 3) + NoLegend()
+table(data.merge$seurat_clusters)
+pdf("2.Cluster/Annotate/cluster.pdf")
+DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "seurat_clusters",cols = Palettes[['circus']])+NoLegend()
+DimPlot(object = data.merge, reduction = 'tsne',label = TRUE, group.by = "seurat_clusters",cols = Palettes[['circus']])+NoLegend()
+DimPlot(object = data.merge,reduction = 'umap',label = TRUE,group.by = "seurat_clusters",cols = Palettes[['circus']],split.by = 'orig.ident',ncol = 3) + NoLegend()
+DimPlot(object = data.merge,reduction = 'tsne',label = TRUE,group.by = "seurat_clusters",cols = Palettes[['circus']],split.by = 'orig.ident',ncol = 3) + NoLegend()
 dev.off()
 
 ## Plot the ratio of each cell type and sample situation##
@@ -72,7 +73,7 @@ saveRDS(data.merge,file = './2.Cluster/data.merge.rds')
 data.merge <- readRDS('./2.Cluster/data.merge.rds')
 Idents(data.merge) <- data.merge$seurat_clusters
 cluster.all.markers <- FindAllMarkers(data.merge, only.pos = TRUE, group.by = "seurat_clusters",
-                                      min.diff.pct = 0.25,logfc.threshold = 0.25,latent.vars = "orig.ident",test.use = 'MAST')
+                                      min.diff.pct = 0.25,logfc.threshold = 0.25)
 cluster.sig.markers <- cluster.all.markers[which(cluster.all.markers$p_val_adj<0.05),]
 saveRDS(cluster.sig.markers, file = "2.Cluster/Annotate/cluster.sig.markers.rds")
 write.table(cluster.sig.markers, file = "2.Cluster/Annotate/cluster.sig.markers.txt", quote = F, sep = "\t", row.names = F)
@@ -80,17 +81,15 @@ cluster.sig.markers.top20 <- cluster.sig.markers %>% group_by(cluster) %>% top_n
 write.table(cluster.sig.markers.top20, file = "2.Cluster/Annotate/cluster.sig.markers.top20.txt", col.names = T, row.names = F, sep = "\t", quote = F)
 
 top5.genes <- cluster.sig.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
-data.merge <- ScaleData(data.merge,features = c(VariableFeatures(data.merge),unique(top5.genes$gene)))
 pdf("2.Cluster/Annotate/cluster.top5genes.pdf",width = 15,height = 15)
-DoHeatmap(data.merge, features = unique(top5.genes$gene), size = 2,group.colors = Palettes[['mycols_15']],group.bar = T) + NoLegend() + 
-  scale_fill_gradientn(colors = Palettes[['greenBlue']])
+DoHeatmap(subset(data.merge,downsample = 50), features = unique(top5.genes$gene), size = 2,group.bar = T) + NoLegend()
 dev.off()
 
 ####The expression of the classic marker##
 data.merge <- readRDS('./2.Cluster/data.merge.rds')
 pdf('./2.Cluster/Annotate/observe.expression.T.B.pdf')
-FeaturePlot(data.merge,features = c('MS4A1','CD19','CD79A','CD79B'),reduction ='umap',order = T,min.cutoff = 1.5,cols = Palettes[['greyMagma']])
-FeaturePlot(data.merge,features = c('CD7','CD3D','CD3E','CD3G'),reduction ='umap',order = T,min.cutoff = 1.5,cols = Palettes[['greyMagma']])
+FeaturePlot(data.merge,features = c('MS4A1','CD19','CD79A','CD79B'),reduction ='umap',order = T,min.cutoff = 1,cols = Palettes[['greyMagma']])
+FeaturePlot(data.merge,features = c('CD7','CD3D','CD3E','CD3G'),reduction ='umap',order = T,min.cutoff = 1,cols = Palettes[['greyMagma']])
 dev.off()
 
 
@@ -159,34 +158,47 @@ table(Idents(data.merge))
 table(data.merge$seurat_clusters)
 major_celltype <- data.merge@meta.data$seurat_clusters
 major_celltype <- gsub("^0$", "T", major_celltype)
-major_celltype <- gsub("^1$", "T", major_celltype)
-major_celltype <- gsub("^2$", "B", major_celltype)
+major_celltype <- gsub("^1$", "B", major_celltype)
+major_celltype <- gsub("^2$", "T", major_celltype)
 major_celltype <- gsub("^3$", "B", major_celltype)
 major_celltype <- gsub("^4$", "T", major_celltype)
 major_celltype <- gsub("^5$", "T", major_celltype)
 major_celltype <- gsub("^6$", "T", major_celltype)
-major_celltype <- gsub("^7$", "Cycling", major_celltype) 
-major_celltype <- gsub("^8$", "Myeloid", major_celltype)
-major_celltype <- gsub("^9$", "NK", major_celltype)
-major_celltype <- gsub("^10$", "T", major_celltype)
-major_celltype <- gsub("^11$", "B", major_celltype)
-major_celltype <- gsub("^12$", "Plasma", major_celltype)
-major_celltype <- gsub("^13$", "Stromal", major_celltype)
-major_celltype <- gsub("^14$", "Myeloid", major_celltype)
+major_celltype <- gsub("^7$", "T", major_celltype) 
+major_celltype <- gsub("^8$", "B", major_celltype)
+major_celltype <- gsub("^9$", "Myeloid", major_celltype)
+major_celltype <- gsub("^10$", "NK", major_celltype)
+major_celltype <- gsub("^11$", "Myofibroblast", major_celltype)
+major_celltype <- gsub("^12$", "LAMP3+cDC", major_celltype)
+major_celltype <- gsub("^13$", "pDC", major_celltype)
+major_celltype <- gsub("^14$", "Endo", major_celltype)
 table(major_celltype)
 data.merge <- AddMetaData(data.merge, major_celltype, col.name = "major_celltype")
 table(data.merge$major_celltype)
 
 pdf('./2.Cluster/Annotate/Imm.observe.pdf')
 FeaturePlot(data.merge,features = 'PTPRC',reduction = 'umap',order = T,min.cutoff = 0)
-VlnPlot(data.merge,features = 'PTPRC',group.by = 'major_celltype',pt.size = 0)
+VlnPlot(data.merge,features = 'PTPRC',group.by = 'major_celltype',pt.size = 0,cols = Palettes[['mycols_8']])
 dev.off()
 
-data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid','Plasma'),'Immune',
+data.merge@meta.data$large_annotation <- ifelse(data.merge@meta.data$major_celltype %in% c('T','B','NK','Myeloid','LAMP3+cDC','pDC'),'Immune',
                                                 data.merge@meta.data$major_celltype)
 table(data.merge$large_annotation)
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
-
+####use plot1cell to visualize####
+library(plot1cell)
+data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
+table(Idents(data.merge))
+circ_data <- prepare_circlize_data(data.merge, scale = 0.8)
+cluster_colors<- Palettes[['circus']][1:length(unique(Idents(data.merge)))]
+group_colors<-rand_color(length(names(table(data.merge$group))))
+rep_colors<-rand_color(length(names(table(data.merge$orig.ident))))
+pdf('2.Cluster/Annotate/circlize_plot.pdf', width = 6, height = 6)
+plot_circlize(circ_data,do.label = T, pt.size = 0.05, col.use = cluster_colors ,bg.color = 'white', kde2d.n = 200, repel = T, label.cex = 0.6)
+# 添加细胞群注释信息
+add_track(circ_data, group = "group", colors = group_colors, track_num = 2) ## can change it to one of the columns in the meta data of your seurat object
+add_track(circ_data, group = "orig.ident",colors = rep_colors, track_num = 3) ## can change it to one of the columns in the meta data of your seurat object
+dev.off()
 ####verify the annotated results by Celltypist####
 data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
 library(reticulate)
@@ -214,12 +226,14 @@ write.xlsx(predicted_major,file = './2.Cluster/Annotate/celltypist_predicted.maj
 View(data.merge@meta.data)
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
+
 ####observe the annotated results####
 data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
 data.merge@meta.data$major_celltype <- factor(data.merge@meta.data$major_celltype,levels = c(
-  'B','T','Cycling','Plasma','NK','Myeloid','Stromal'
+  'T','B','NK','Myeloid','LAMP3+cDC','pDC','Myofibroblast','Endo'
 ),ordered = T)
 source('./function/colorPalettes.R')
+source('./function/do_dimplot.R')
 pdf("2.Cluster/Annotate/cellType.pro.pdf")
 length(unique(data.merge$major_celltype))
 DimPlot(object = data.merge, reduction = 'tsne',label = FALSE, group.by = "large_annotation",cols = Palettes[['mycols_4']])
@@ -230,6 +244,13 @@ DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "major_
 DimPlot(object = data.merge, reduction = 'umap',label = TRUE, group.by = "major_celltype",cols = Palettes[['mycols_8']])
 dev.off()
 
+pdf('./2.Cluster/Annotate/cellType.pro.umap.pdf',width = 10,height = 8)
+DoDimplot(data.merge,groupby = 'major_celltype',colors = Palettes[['mycols_8']])
+dev.off()
+
+pdf('./2.Cluster/Annotate/Epcam.pdf')
+FeaturePlot(data.merge,features = 'EPCAM',reduction = 'umap',order = T)
+dev.off()
 ##Plot--- celltype marker plot
 pdf("2.Cluster/Annotate/cellType.ratio.pdf", height = 4, width = 7)
 ratio.plot(seurat.object = data.merge, id.vars1 = "orig.ident", id.vars2 = "major_celltype", angle = 60)
@@ -246,18 +267,19 @@ gene.matrix <- exp.matrix[na.omit(index),]
 cell.type.markers <- cell.type.markers[which(!is.na(index)),]
 cell.type.markers_distinct <- cell.type.markers %>% distinct(Gene,.keep_all = T)
 gene_list <- list(
-                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
                   T = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='T'],
-                  Cycing = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Cycling'],
-                  Plasma = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Plasma'],
+                  B = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='B'],
                   NK = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='NK'],
                   Myeloid = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myeloid'],
-                  Stromal = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Stromal']
+                  'LAMP3+cDC' = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='LAMP3+cDC'],
+                  pDC = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='pDC'],
+                  Myofibroblast = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Myofibroblast'],
+                  Endo = cell.type.markers_distinct$Gene[cell.type.markers_distinct$Celltype=='Endo']
                   )
 pdf("2.Cluster/Annotate/cellType.marker.dotplot.pdf", height = 5,width = 18)
 Idents(data.merge) <- data.merge$major_celltype
-DotPlot(data.merge,features = gene_list,cols = c('grey','red'),scale.by = 'size',col.min = 1) + 
-  theme(axis.text.x = element_text(size = 8))
+DotPlot(data.merge,features = gene_list,scale.by = 'size',col.min = 1) + scale_color_gradientn(colours = Palettes[['blueRed']]) + 
+  theme(axis.text.x = element_text(size = 8,angle = 25))
 dev.off()
 
 Idents(data.merge) <- data.merge$major_celltype
@@ -295,6 +317,37 @@ ratio.plot(seurat.object = data.merge, id.vars1 = "major_celltype", id.vars2 = "
 dev.off()
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 
+
+Idents(data.merge) <- data.merge$major_celltype
+table(Idents(data.merge))
+# 每个细胞亚群抽1/20
+allCells=names(Idents(data.merge))
+allType = levels(Idents(data.merge))
+choose_Cells = unlist(lapply(allType, function(x){
+  cgCells = allCells[Idents(data.merge)== x ]
+  if(length(cgCells) > 1000){
+    cg=sample(cgCells,size = floor(length(cgCells)/20))}
+  else{
+    cg = cgCells
+  }
+  cg
+}))
+
+cg_sce = data.merge[,allCells %in% choose_Cells]
+table(Idents(cg_sce))
+library(ggSankeyGrad)
+tmp <- as.data.frame(table(cg_sce$major_celltype,cg_sce$sample))
+cols1 <- unlist(lapply(Palettes[['mycols_8']],function(i){
+  rep(i,6)
+}))
+cols2 <- rep(Palettes[['mycols_6']],8)
+tmp$cols1 = cols1
+tmp$cols2 = cols2
+pdf('./2.Cluster/Annotate/sample.celltype.sankeyplot.pdf')
+with(tmp,ggSankeyGrad(c1 = Var1,c2 = Var2,values = tmp$Freq,col1 = cols1,col2 = cols2,
+             label = T,alpha = 0.6,padding = 30))
+dev.off()
+
 pdf('2.Cluster/Annotate/dimplot.group.pdf',width = 12)
 DimPlot(data.merge,group.by = 'major_celltype',reduction = 'umap',split.by = 'group',cols = Palettes[['mycols_8']],label = F)
 DimPlot(data.merge,group.by = 'major_celltype',reduction = 'tsne',split.by = 'group',cols = Palettes[['mycols_8']],label = F)
@@ -311,9 +364,8 @@ idents <- as.character(levels(data.merge))
 cellType.all.markers <- FindAllMarkers(data.merge, 
                                        group.by = "major_celltype", 
                                        logfc.threshold = 0.25, 
-                                       min.pct = 0.25, 
-                                       test.use = "MAST", 
-                                       latent.vars = "orig.ident")##同时包含上调和下调基因
+                                       min.pct = 0.25,
+                                       )##同时包含上调和下调基因
 saveFormat <- lapply(idents, function(x){
   index <- which(cellType.all.markers$cluster == x)
   DEGs <- cellType.all.markers[index,]
@@ -371,46 +423,24 @@ saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')
 ####test of celltype percentage between groups####
 data.merge <- readRDS('./2.Cluster/data.merge.pro.rds')
 df <- as.data.frame(table(data.merge$major_celltype,data.merge$sample))
-df$percent <- round(df$Freq/ncol(data.merge),4) * 100
+df$total <- apply(df,1,function(x){sum(df$Freq[df$Var2==x[2]])})
+df$percent <- round(df$Freq/df$total,4) * 100
 df$group <- ifelse(grepl(df$Var2,pattern = 'T'),'tumor','normal')
 idents <- unique(df$Var1)
-pdf('./2.Cluster/Annotate/celltype.percentage.group.pdf',height = 18)
+pdf('./2.Cluster/Annotate/celltype.percentage.group.pdf',height = 10,width = 15)
 res <- lapply(idents,function(i){
   tmp <- df[df$Var1==i,]
   comparison = list(c('normal','tumor'))
-  res <- ggpaired(tmp,x = 'group',y = 'percent',fill = 'group',palette = 'npg',width = .5,line.size = .1,line.color = 'grey') +
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test',paired = T) +
+  res <- ggpaired(tmp,x = 'group',y = 'percent',fill = 'group',palette = 'npg',width = .5,line.size = .1,line.color = 'grey') + 
     theme_classic() +
     labs(title = i,x = 'Group',y = '% of all cells',fill = 'Group')
   return(res)
 })
-plot_grid(plotlist = res,ncol = 2)
+plot_grid(plotlist = res,ncol = 4)
 dev.off()
 
-pdf('./2.Cluster/Annotate/celltype.percentage.group.unpaired.pdf',height = 18)
-res <- lapply(idents,function(i){
-  tmp <- df[df$Var1==i,]
-  comparison = list(c('normal','tumor'))
-  res <- ggplot(tmp,aes(x = group,y = percent,fill = group)) + geom_boxplot(width = .4) + geom_point() + 
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test') +
-    theme_classic() + ggsci::scale_fill_npg() + 
-    labs(title = i,x = 'Group',y = '% of all cells',fill = 'Group')
-  return(res)
-})
-plot_grid(plotlist = res,ncol = 2)
-dev.off()
-
-pdf('./2.Cluster/Annotate/celltype.percentage.group.barplot.pdf',height = 18)
-res <- lapply(idents,function(i){
-  tmp <- df[df$Var1==i,]
-  comparison = list(c('normal','tumor'))
-  res <- ggbarplot(tmp,x = 'group',y = 'percent',fill = 'group',add = 'mean_se') + 
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test') +
-    theme_classic() + ggsci::scale_fill_npg() + 
-    labs(title = i,x = 'Group',y = '% of all cells',fill = 'Group')
-  return(res)
-})
-plot_grid(plotlist = res,ncol = 2)
-dev.off()
-
+library(speckle)
+metadata <- data.merge@meta.data
+res <- propeller(clusters = metadata$major_celltype,sample = metadata$sample,group = metadata$group)
+write.csv(res,file = './2.Cluster/Annotate/celltype.propeller.test.csv')
 saveRDS(data.merge,file = './2.Cluster/data.merge.pro.rds')

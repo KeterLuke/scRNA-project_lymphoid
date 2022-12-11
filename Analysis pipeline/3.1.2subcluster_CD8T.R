@@ -37,6 +37,9 @@ CD8 <- NormalizeData(CD8, verbose = FALSE)
 CD8 <- FindVariableFeatures(CD8,nfeatures = 3000,verbose = F)
 CD8 <- ScaleData(CD8, verbose = FALSE, vars.to.regress = c("nCount_RNA", "percent.mt"), features = VariableFeatures(CD8))
 ####correct batch effect####
+CD8 <- RunPCA(CD8,npcs = 100,features = VariableFeatures(CD8),verbose = F)
+source('./function/do_Elbow_quantitative_modified_by_lhc.R')
+do_Elbow_quantitative(CD8,harmony = F)
 ####RNA.Harmony.PC15####
 pdf("3.1Subcluster_T/Annotate/CD8/RNA.Harmony.PC15.Integration.pdf")
 CD8.harmony <- Harmony.integration.reduceDimension(seurat.object = CD8, assay = "RNA", set.resolutions = seq(0.1, 1, by = 0.1), PC = 15, npcs = 100)
@@ -52,9 +55,14 @@ pdf("3.1Subcluster_T/Annotate/CD8/RNA.Harmony.PC20.Integration.pdf")
 CD8.harmony <- Harmony.integration.reduceDimension(seurat.object = CD8, assay = "RNA", set.resolutions = seq(0.1, 1, by = 0.1), PC = 20, npcs = 100)
 dev.off()
 saveRDS(CD8.harmony,file = './3.1Subcluster_T/Annotate/CD8/RNA.Harmony.Integration.PC20.rds')
-####select RNA Harmony PC10,res:0.5####
+####RNA.Harmony.PC25####
+pdf("3.1Subcluster_T/Annotate/CD8/RNA.Harmony.PC25.Integration.pdf")
+CD8.harmony <- Harmony.integration.reduceDimension(seurat.object = CD8, assay = "RNA", set.resolutions = seq(0.1, 1, by = 0.1), PC = 25, npcs = 100)
+dev.off()
+saveRDS(CD8.harmony,file = './3.1Subcluster_T/Annotate/CD8/RNA.Harmony.Integration.PC25.rds')
+####select RNA Harmony PC10,res:0.2####
 CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/RNA.Harmony.Integration.PC10.rds')
-CD8$seurat_clusters <- CD8$RNA_snn_res.0.5
+CD8$seurat_clusters <- CD8$RNA_snn_res.0.2
 length(unique(CD8$seurat_clusters))
 table(CD8$seurat_clusters)
 dir.create('./3.1Subcluster_T/Annotate/CD8/Annotate')
@@ -68,8 +76,7 @@ CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.rds')
 Idents(CD8) <- CD8$seurat_clusters
 table(Idents(CD8))
 cluster.pos.markers <- FindAllMarkers(CD8, only.pos = TRUE, group.by = "seurat_clusters",
-                                      min.diff.pct = 0.1,test.use = 'MAST',
-                                      latent.vars = 'orig.ident')
+                                      min.diff.pct = 0.25,logfc.threshold = 0.25)
 cluster.sig.markers <- cluster.pos.markers[which(cluster.pos.markers$p_val_adj<0.05),]
 saveRDS(cluster.sig.markers, file = "3.1Subcluster_T/Annotate/CD8/Annotate/cluster.sig.markers.rds")
 write.table(cluster.sig.markers, file = "3.1Subcluster_T/Annotate/CD8/Annotate/cluster.sig.markers.txt", quote = F, sep = "\t", row.names = F)
@@ -95,8 +102,8 @@ saveRDS(CD8,file = './3.1Subcluster_T/Annotate/CD8/CD8.rds')
 CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.rds')
 Idents(CD8) <- CD8$seurat_clusters
 signature <- list(Naive = c('CCR7','LEF1','CD55','TCF7'),
-                  Effector = c('IFNG','GNLY','GZMA','GZMB','GZMH','NKG7','CCL4','CCL5','CST7'),
-                  Exhaustion = c('PDCD1','TIGIT','LAG3','HAVCR2','TOX2','MAF','ITM2A','LGALS3'))
+                  Effector = c('GZMK','GZMA','GZMB','GZMH','NKG7','CCL4','CCL5','CST7'),
+                  Exhaustion =  c('TIGIT','MAF','LAG3','HAVCR2','PDCD1','TOX','TOX2','LYST'))
 sce <- AddModuleScore(CD8,features = signature,name = names(signature))
 pdf('3.1Subcluster_T/Annotate/CD8/Annotate/Signature_score.pdf',width = 8,height = 12)
 VlnPlot(sce,features = c('Naive1','Effector2','Exhaustion3'),ncol = 2,pt.size = 0,cols = Palettes[['darjeeling']])
@@ -127,76 +134,7 @@ table(CD8$celltypist_minor,CD8$seurat_clusters)
 
 write.xlsx(predicted_minor,file = '3.1Subcluster_T/Annotate/CD8/Annotate/celltypist_predicted.minor.xlsx',rowNames = T)
 saveRDS(CD8,file = '3.1Subcluster_T/Annotate/CD8/CD8.rds')
-####enrichment####
-CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.rds')
-cluster.DE <- FindAllMarkers(CD8,only.pos = F,group.by = 'seurat_clusters',min.diff.pct = 0.1,test.use = 'MAST',
-                             latent.vars = 'orig.ident')
-idents <- levels(CD8)
-saveFormat <- lapply(idents, function(x){
-  index <- which(cluster.DE$cluster == x)
-  DEGs <- cluster.DE[index,]
-  DEGs.up <- DEGs %>% filter(avg_log2FC>0) %>% arrange(desc(avg_log2FC))
-  DEGs.down <- DEGs %>% filter(avg_log2FC<0) %>% arrange(avg_log2FC)
-  DEGs <- rbind(DEGs.up, DEGs.down)
-  return(DEGs)
-})
-write.xlsx(saveFormat, file = "3.1Subcluster_T/Annotate/CD8/Annotate/cluster.all.DE.xlsx", sheetName = idents, rowNames = F)
-saveRDS(cluster.DE, file = "3.1Subcluster_T/Annotate/CD8/Annotate/cluster.all.DE.rds")
 
-##-- Functional enrichment analysis
-DEGs <- lapply(saveFormat, function(x){
-  x <- x %>% filter(p_val_adj<0.05 & avg_log2FC>0.25) %>% arrange(desc(avg_log2FC))
-  return(x)
-})
-names(DEGs) <- idents
-write.xlsx(DEGs, file = "3.1Subcluster_T/Annotate/CD8/Annotate/clusters.DEGs.xlsx", sheetName = idents, rowNames = F)
-saveRDS(DEGs, file = "3.1Subcluster_T/Annotate/CD8/Annotate/clusters.DEGs.rds")
-####
-CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.rds')
-DEGs <- readRDS('3.1Subcluster_T/Annotate/CD8/Annotate/clusters.DEGs.rds')
-idents <- levels(CD8)
-DEGs <- lapply(DEGs, function(x){
-  return(x$gene)
-})
-source("function/clusterProfiler.enricher.R")
-####enricher
-dir.create('3.1Subcluster_T/Annotate/CD8/Annotate/enrichment')
-dir.create('3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/msigDB')
-pdf('3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/msigDB/cluster.clusterProfiler.enricher.pdf')
-res <- lapply(names(DEGs), function(x){
-  y <- DEGs[[x]]
-  res <- cluterProfiler.enricher(gene = y, geneType = "SYMBOL", db.type = "MsigDB",saveDir = paste0(getwd(),'/3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/msigDB'),
-                                 filename = 'enricherResult.xlsx',title = x, qvalueCutoff = 0.05, pvalueCutoff = 0.05)
-  # gene ratio
-  res <- res$em.res.genesymbol@result %>% filter(p.adjust<0.05) #fdr adjust
-  pathway.geneNum <- unlist(strsplit(res$BgRatio, "/"))[seq(1, nrow(res),by=2)]
-  gene.ratio <- as.numeric(res$Count)/as.numeric(pathway.geneNum)
-  res$gene.ratio <- gene.ratio
-  return(res)
-})
-dev.off()
-names(res) <- names(DEGs)
-write.xlsx(res, file = "3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/msigDB/clusterProfiler.enricher.result.xlsx", sheetName = idents, rowNames = F)
-saveRDS(res,file = '3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/msigDB/clusterProfiler.enricher.result.rds')
-####enrichgo
-dir.create('3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/GO')
-pdf('3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/GO/cluster.clusterProfiler.enrichgo.pdf')
-res <- lapply(names(DEGs), function(x){
-  y <- DEGs[[x]]
-  res <- cluterProfiler.enricher(gene = y, geneType = "SYMBOL", db.type = "GO",GO.ont = 'BP',filename = 'enrichgoResult.csv',
-                                 saveDir = paste0(getwd(),'/3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/GO/'),
-                                 title = x, qvalueCutoff = 0.05, pvalueCutoff = 0.05)
-  # gene ratio
-  res <- res$em.res.genesymbol@result %>% filter(p.adjust<0.05) #fdr adjust
-  pathway.geneNum <- unlist(strsplit(res$BgRatio, "/"))[seq(1, nrow(res),by=2)]
-  gene.ratio <- as.numeric(res$Count)/as.numeric(pathway.geneNum)
-  res$gene.ratio <- gene.ratio
-  return(res)
-})
-dev.off()
-names(res) <- names(DEGs)
-write.xlsx(res, file = "3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/GO/clusterProfiler.enrichgo.result.xlsx", sheetName = idents, rowNames = F)
-saveRDS(res,file = '3.1Subcluster_T/Annotate/CD8/Annotate/enrichment/GO/clusterProfiler.enrichgo.result.rds')
 ##cluster similarity#####
 CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.rds')
 expMatrix <- GetAssayData(CD8, slot = "scale.data")
@@ -277,27 +215,22 @@ pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/cluster1.pdf')
 plot_density(CD8,features = c('CCR7'),reduction = 'umap')
 dev.off()
 pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/cluster2.pdf')
-plot_density(CD8,features = c('ANXA1'),reduction = 'umap')
+plot_density(CD8,features = c('GIMAP7'),reduction = 'umap')
 dev.off()
 pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/cluster3.pdf')
-plot_density(CD8,features = c('HSPA1B'),reduction = 'umap')
+plot_density(CD8,features = c('SESN3'),reduction = 'umap')
 dev.off()
-pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/cluster4.pdf')
-plot_density(CD8,features = c('HAVCR2'),reduction = 'umap')
-dev.off()
-####annotate
 ####annotate
 minor_celltype <- CD8@meta.data$seurat_clusters
 minor_celltype <- gsub("^0$", "C0 CD8Teff-GZMK", minor_celltype)
 minor_celltype <- gsub("^1$", "C1 CD8Tn-CCR7", minor_celltype)
-minor_celltype <- gsub("^2$", "C2 CD8Tm-ANXA1", minor_celltype)
-minor_celltype <- gsub("^3$", "C3 CD8Tefs-HSPA1B", minor_celltype)
-minor_celltype <- gsub("^4$", "C4 CD8Tex-HAVCR2", minor_celltype)
+minor_celltype <- gsub("^2$", "C2 CD8Teff-GIMAP7", minor_celltype)
+minor_celltype <- gsub("^3$", "C3 CD8Tem-SESN3", minor_celltype)
 
 table(minor_celltype)
 CD8 <- AddMetaData(CD8,minor_celltype,col.name = 'minor_celltype')
 table(CD8$minor_celltype)
-CD8$minor_celltype <- factor(CD8$minor_celltype,levels = c('C1 CD8Tn-CCR7','C2 CD8Tm-ANXA1','C0 CD8Teff-GZMK','C3 CD8Tefs-HSPA1B','C4 CD8Tex-HAVCR2'))
+CD8$minor_celltype <- factor(CD8$minor_celltype,levels = c('C1 CD8Tn-CCR7','C3 CD8Tem-SESN3','C0 CD8Teff-GZMK','C2 CD8Teff-GIMAP7'))
 Idents(CD8) <- CD8$minor_celltype
 DefaultAssay(CD8) <- "RNA"
 
@@ -328,8 +261,8 @@ dev.off()
 saveRDS(CD8,file = './3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
 ####expression of celltype markers####
 CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
-genelist <- c('CD55','CCR7','LEF1','SELL','ANXA1','IL7R','S100A4','GZMK','GZMH','GZMA','NKG7','CCL4','CCL5',
-              'HSPA1B','HSPA1A','HAVCR2','LGALS3','LYST','PMAIP1')
+genelist <- c('CD55','CCR7','LEF1','SELL','IL7R','SESN3','IL6ST','GPR183','ANXA1','GZMK','GZMH','GZMA','NKG7','CCL4','CCL5','GIMAP7'
+             )
 Idents(CD8) <- CD8$minor_celltype
 exp.matrix <- GetAssayData(CD8, slot = "data")
 index <- match(genelist, rownames(exp.matrix))
@@ -352,7 +285,7 @@ Heatmap(t(cluster.score.normailzed),
 dev.off()
 pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/celltype_expression.dotplot.pdf',width = 12,height = 8)
 Idents(CD8) <- CD8$minor_celltype
-DotPlot(CD8,features = genelist,cols = c('grey','red'),scale.by = 'size',col.min = 0,scale.min = 0) + 
+DotPlot(CD8,features = genelist,scale.by = 'size') + scale_color_gradientn(colors = Palettes[['blueRed']]) + 
   theme(axis.text.x = element_text(size = 8)) + coord_flip()
 dev.off()
 
@@ -361,68 +294,19 @@ saveRDS(CD8,file = './3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
 ########test of celltype percentage between groups####
 CD8 <- readRDS('3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
 df <- as.data.frame(table(CD8$minor_celltype,CD8$sample))
-df$percent <- round(df$Freq/ncol(CD8),4) * 100
+df$total <- apply(df,1,function(x){sum(df$Freq[df$Var2==x[2]])})
+df$percent <- round(df$Freq/df$total,4) * 100
 df$group <- ifelse(grepl(df$Var2,pattern = 'T'),'tumor','normal')
 idents <- unique(df$Var1)
-pdf('3.1Subcluster_T/Annotate/CD8/Annotate/celltype.percentage.group.pdf',height = 18)
+pdf('3.1Subcluster_T/Annotate/CD8/Annotate/celltype.percentage.group.pdf',height = 12,width = 15)
 res <- lapply(idents,function(i){
   tmp <- df[df$Var1==i,]
   comparison = list(c('normal','tumor'))
-  res <- ggpaired(tmp,x = 'group',y = 'percent',fill = 'group',palette = 'npg',width = .5,line.size = .1,line.color = 'grey') +
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test',paired = T) +
-    theme_classic() +
+  res <- ggpaired(tmp,x = 'group',y = 'percent',fill = 'group',palette = 'npg',width = .5,line.size = .1,line.color = 'grey') +    theme_classic() +
     labs(title = i,x = 'Group',y = '% of CD8+ T cells',fill = 'Group')
   return(res)
 })
-plot_grid(plotlist = res,ncol = 2)
-dev.off()
-
-pdf('3.1Subcluster_T/Annotate/CD8/Annotate/celltype.percentage.group.unpaired.pdf',height = 18)
-res <- lapply(idents,function(i){
-  tmp <- df[df$Var1==i,]
-  comparison = list(c('normal','tumor'))
-  res <- ggplot(tmp,aes(x = group,y = percent,fill = group)) + geom_boxplot(width = .4) + geom_point() + 
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test') +
-    theme_classic() + ggsci::scale_fill_npg() + 
-    labs(title = i,x = 'Group',y = '% of CD8+ T cells',fill = 'Group')
-  return(res)
-})
-plot_grid(plotlist = res,ncol = 2)
-dev.off()
-
-pdf('3.1Subcluster_T/Annotate/CD8/Annotate/celltype.percentage.group.barplot.pdf',height = 18)
-res <- lapply(idents,function(i){
-  tmp <- df[df$Var1==i,]
-  comparison = list(c('normal','tumor'))
-  res <- ggbarplot(tmp,x = 'group',y = 'percent',fill = 'group',add = 'mean_se') + 
-    stat_compare_means(comparisons = comparison,method = 'wilcox.test') +
-    theme_classic() + ggsci::scale_fill_npg() + 
-    labs(title = i,x = 'Group',y = '% of CD8+ T cells',fill = 'Group')
-  return(res)
-})
-plot_grid(plotlist = res,ncol = 2)
+plot_grid(plotlist = res,ncol = 4)
 dev.off()
 
 saveRDS(CD8,file = '3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
-####observe immune-exhaustion score in Teff and Tex clusters####
-CD8 <- readRDS('./3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
-Idents(CD8) <- CD8$minor_celltype
-df <- FetchData(CD8,vars = c('Exhaustion3','minor_celltype'),cells = WhichCells(CD8,idents = c('C0 CD8Teff-GZMK','C3 CD8Tefs-HSPA1B','C4 CD8Tex-HAVCR2')))
-table(df$minor_celltype)
-pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/Immune.exhaustion.score.compare.pdf')
-ggviolin(df,x = 'minor_celltype',y = 'Exhaustion3',fill = 'minor_celltype',palette = 'npg',add = 'boxplot') + 
-  stat_compare_means(comparisons = list(c('C0 CD8Teff-GZMK','C3 CD8Tefs-HSPA1B'),
-                                        c('C3 CD8Tefs-HSPA1B','C4 CD8Tex-HAVCR2'),
-                                        c('C0 CD8Teff-GZMK','C4 CD8Tex-HAVCR2')),
-                     method = 'wilcox.test',label = 'p.signif') + ylab('Immune exhaustion score') + 
-  stat_summary(fun.data = function(x) data.frame(y=-.8, label = paste("Mean=",round(mean(x),3))), geom="text")
-dev.off()
-
-df2 <- FetchData(CD8,vars = c('Exhaustion3','minor_celltype','group'),cells = WhichCells(CD8,idents = c('C0 CD8Teff-GZMK','C3 CD8Tefs-HSPA1B','C4 CD8Tex-HAVCR2')))
-pdf('./3.1Subcluster_T/Annotate/CD8/Annotate/Immune.exhaustion.score.group.compare.pdf',width = 10)
-ggviolin(df2,x = 'group',y = 'Exhaustion3',fill = 'minor_celltype',palette = 'npg',add = 'boxplot',facet.by = 'minor_celltype') + 
-  stat_compare_means(comparisons = list(c('normal','tumor')),
-                     method = 'wilcox.test',label = 'p.signif') + ylab('Immune exhaustion score') + 
-  stat_summary(fun.data = function(x) data.frame(y=-.8, label = paste("Mean=",round(mean(x),3))), geom="text")
-dev.off()
-saveRDS(CD8,file = './3.1Subcluster_T/Annotate/CD8/CD8.pro.rds')
